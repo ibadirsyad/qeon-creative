@@ -1,0 +1,16 @@
+
+# Dependencies dan hasil build
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/tmp/
+
+# Environment variables dan rahasia
+.env
+.env.*
+!.env.example
+frontend/.env
+backend/.env
+
+# Log
+npm-debug.log*
