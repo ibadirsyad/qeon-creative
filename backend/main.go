@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -17,8 +18,7 @@ import (
 )
 
 const (
-	serverAddress = ":8080"
-	maxHTMLSize   = 3 * 1024 * 1024
+	maxHTMLSize = 3 * 1024 * 1024
 )
 
 type APIResponse struct {
@@ -35,6 +35,12 @@ type tikTokOEmbedResponse struct {
 }
 
 func main() {
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "8080"
+	}
+	serverAddress := ":" + port
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler)
 	mux.HandleFunc("/api/affiliate/preview-image", previewImageHandler)
@@ -525,10 +531,16 @@ func appendJSONImage(result []string, value any) []string {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin == "http://localhost:5173" || origin == "http://127.0.0.1:5173" {
+		allowedOrigins := map[string]bool{
+			"https://qeon-creative.vercel.app": true,
+			"http://localhost:5173":            true,
+			"http://127.0.0.1:5173":            true,
+		}
+
+		if allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Add("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		}
 		if r.Method == http.MethodOptions {
