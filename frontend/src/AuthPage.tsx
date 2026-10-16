@@ -1,9 +1,16 @@
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from './lib/supabase'
 import './AuthPage.css'
 
 type AuthMode = 'login' | 'register'
+type WebsiteBrand = { site_name: string; tagline: string; logo_url: string }
+
+const defaultBrand: WebsiteBrand = {
+  site_name: 'Qeon Company',
+  tagline: 'Technology Education',
+  logo_url: '',
+}
 
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
@@ -13,6 +20,38 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [brand, setBrand] = useState<WebsiteBrand>(defaultBrand)
+
+  useEffect(() => {
+    let active = true
+
+    async function loadWebsiteBrand() {
+      const { data, error } = await supabase
+        .from('website_settings')
+        .select('site_name, tagline, logo_url')
+        .eq('id', 'main')
+        .maybeSingle()
+
+      if (!active) return
+
+      if (error) {
+        // Pengaturan branding tidak boleh menghalangi pengguna login.
+        console.warn('Pengaturan branding website tidak dapat dimuat:', error.message)
+        return
+      }
+
+      if (data) {
+        setBrand({
+          site_name: data.site_name?.trim() || defaultBrand.site_name,
+          tagline: data.tagline?.trim() || defaultBrand.tagline,
+          logo_url: data.logo_url?.trim() || '',
+        })
+      }
+    }
+
+    void loadWebsiteBrand()
+    return () => { active = false }
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -66,14 +105,18 @@ export default function AuthPage() {
   return (
     <main className="auth-page">
       <section className="auth-card">
-        <a className="auth-brand" href="/">
-          <span className="auth-brand-icon">A</span>
-          <span>
-            Affili<span>CMS</span>
-          </span>
+        <a className="auth-brand" href="/" aria-label={`${brand.site_name} - Beranda`}>
+          {brand.logo_url ? (
+            <img className="auth-brand-logo" src={brand.logo_url} alt={`Logo ${brand.site_name}`} />
+          ) : (
+            <span className="auth-brand-icon" aria-hidden="true">
+              {brand.site_name.charAt(0).toUpperCase()}
+            </span>
+          )}
+          <span className="auth-brand-name">{brand.site_name}</span>
         </a>
 
-        <p className="auth-eyebrow">AFFILIATE WORKSPACE</p>
+        <p className="auth-eyebrow">{brand.tagline || 'AFFILIATE WORKSPACE'}</p>
 
         <h1>
           {mode === 'login'

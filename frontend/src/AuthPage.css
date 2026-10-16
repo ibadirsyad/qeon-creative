@@ -30,8 +30,16 @@
   text-decoration: none;
 }
 
-.auth-brand > span:last-child > span {
-  color: #6558e8;
+.auth-brand-name {
+  overflow-wrap: anywhere;
+}
+
+.auth-brand-logo {
+  width: auto;
+  max-width: 150px;
+  height: 40px;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .auth-brand-icon {
