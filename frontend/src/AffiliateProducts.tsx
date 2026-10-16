@@ -167,7 +167,6 @@ export default function AffiliateProducts({
             return false;
         }
     }
-
     async function uploadProductImage(file: File): Promise<string> {
         const extensionByType: Record<string, string> = {
             'image/jpeg': 'jpg',
@@ -218,16 +217,29 @@ export default function AffiliateProducts({
         setFetchingImage(true);
 
         try {
-            const apiUrl = import.meta.env.VITE_API_URL;
+            const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
 
-            if (!apiUrl) {
-                throw new Error('VITE_API_URL belum diatur di file .env.');
+            if (!configuredApiUrl) {
+                throw new Error(
+                    'Alamat backend belum diatur. Tambahkan VITE_API_URL di Environment Variables Vercel, lalu deploy ulang.',
+                );
             }
 
-            const endpoint = new URL(
-                '/api/affiliate/preview-image',
-                apiUrl,
-            );
+            // URL() membutuhkan base URL absolut, termasuk protokol http:// atau https://.
+            let apiBaseUrl: URL;
+            try {
+                apiBaseUrl = new URL(configuredApiUrl);
+            } catch {
+                throw new Error(
+                    'VITE_API_URL tidak valid. Isi dengan URL backend Railway lengkap, misalnya https://nama-service.up.railway.app.',
+                );
+            }
+
+            if (apiBaseUrl.protocol !== 'https:' && apiBaseUrl.protocol !== 'http:') {
+                throw new Error('VITE_API_URL harus diawali https:// atau http://.');
+            }
+
+            const endpoint = new URL('/api/affiliate/preview-image', apiBaseUrl.origin);
 
             endpoint.searchParams.set('url', affiliateUrl);
 
