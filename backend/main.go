@@ -78,15 +78,15 @@ func aiCoverHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, APIResponse{Status: "error", Error: "Gunakan metode POST"})
 		return
 	}
-	hfToken := strings.TrimSpace(os.Getenv("HF_TOKEN"))
+	apiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
 	supabaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("SUPABASE_URL")), "/")
 	supabaseAnonKey := strings.TrimSpace(os.Getenv("SUPABASE_ANON_KEY"))
-	if hfToken == "" || supabaseURL == "" || supabaseAnonKey == "" {
-		writeJSON(w, http.StatusServiceUnavailable, APIResponse{Status: "error", Error: "Backend belum dikonfigurasi. Periksa HF_TOKEN, SUPABASE_URL, dan SUPABASE_ANON_KEY."})
+	if apiKey == "" || supabaseURL == "" || supabaseAnonKey == "" {
+		writeJSON(w, http.StatusServiceUnavailable, APIResponse{Status: "error", Error: "Backend belum dikonfigurasi. Periksa GEMINI_API_KEY, SUPABASE_URL, dan SUPABASE_ANON_KEY."})
 		return
 	}
 
-	// Validasi sesi Supabase agar endpoint generator tidak dapat digunakan anonim.
+	// Validasi sesi Supabase sebelum mengizinkan pemakaian API gambar.
 	token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	if token == "" {
 		writeJSON(w, http.StatusUnauthorized, APIResponse{Status: "error", Error: "Login diperlukan untuk menggunakan generator AI."})
@@ -129,9 +129,6 @@ func aiCoverHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, APIResponse{Status: "error", Error: "Deskripsi tambahan maksimal 800 karakter."})
 		return
 	}
-	if input.Count != 2 {
-		input.Count = 2
-	}
 	allowedStyles := map[string]bool{
 		"modern editorial": true, "photorealistic": true, "minimalist clean design": true,
 		"bold vibrant social media design": true, "cinematic premium photography": true, "3D illustration": true,
@@ -140,130 +137,115 @@ func aiCoverHandler(w http.ResponseWriter, r *http.Request) {
 		input.Style = "modern editorial"
 	}
 
-	prompt := fmt.Sprintf("Create a professional landscape cover image for a web article. Article title/topic: %q. Visual style: %s. Additional art direction: %s. Composition should be polished, high-quality and easy to understand at thumbnail size. Keep important subjects away from edges. No watermarks, logos, fake UI, or long text. The website displays the article title separately.", input.Title, input.Style, input.Description)
-	model := strings.TrimSpace(os.Getenv("HF_IMAGE_MODEL"))
+	model := strings.TrimSpace(os.Getenv("GEMINI_IMAGE_MODEL"))
 	if model == "" {
-		model = "black-forest-labs/FLUX.1-schnell"
+		model = "gemini-3.1-flash-lite-image"
 	}
-	provider := strings.TrimSpace(os.Getenv("HF_IMAGE_PROVIDER"))
-	if provider == "" {
-		provider = "fal-ai"
-	}
-	if strings.Contains(model, "..") || strings.Contains(provider, "/") || strings.Contains(provider, "..") {
-		writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Konfigurasi model Hugging Face tidak valid."})
+	if strings.Contains(model, "/") || strings.Contains(model, "..") {
+		writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Konfigurasi GEMINI_IMAGE_MODEL tidak valid."})
 		return
 	}
-	// Hugging Face memetakan FLUX.1-schnell ke provider model fal-ai/flux/schnell.
-	// Endpoint provider-specific menggunakan skema prompt milik Fal, bukan skema generic `inputs`.
-	providerModel := ""
-	if provider == "fal-ai" {
-		switch model {
-		case "black-forest-labs/FLUX.1-schnell":
-			providerModel = "fal-ai/flux/schnell"
-		case "black-forest-labs/FLUX.1-dev":
-			providerModel = "fal-ai/flux/dev"
-		default:
-			writeJSON(w, http.StatusBadRequest, APIResponse{Status: "error", Error: "Model ini belum dipetakan untuk provider fal-ai. Gunakan black-forest-labs/FLUX.1-schnell atau FLUX.1-dev."})
-			return
-		}
-	} else {
-		writeJSON(w, http.StatusBadRequest, APIResponse{Status: "error", Error: "Provider yang dikonfigurasi belum didukung oleh handler ini. Gunakan HF_IMAGE_PROVIDER=fal-ai."})
-		return
-	}
+	basePrompt := fmt.Sprintf("Create a professional 16:9 landscape cover image for a web article. Article title/topic: %q. Visual style: %s. Additional art direction: %s. Polished editorial composition, clear focal point, readable at thumbnail size, important subjects away from edges. Do not render text, logos, watermarks, or fake UI; the website will show the article title separately.", input.Title, input.Style, input.Description)
 
-	// Buat dua variasi. Fal mengembalikan URL gambar di JSON; backend mengambil gambar
-	// tersebut dan mengirimnya ke frontend sebagai base64 agar tidak mengekspos token.
+	// Gemini image generation returns image bytes in candidates[].content.parts[].inlineData.
+	// Make two separate requests because the API does not accept OpenAI-style n=2 here.
 	client := &http.Client{Timeout: 150 * time.Second}
 	images := make([]generatedCover, 0, 2)
 	for i := 0; i < 2; i++ {
-		body, _ := json.Marshal(map[string]any{
-			"prompt":     fmt.Sprintf("%s Variation %d. Make this variation visually distinct while preserving the subject and style.", prompt, i+1),
-			"image_size": "landscape_16_9",
-			"num_images": 1,
-		})
-		endpoint := "https://router.huggingface.co/fal-ai/" + providerModel
-		hfReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, bytes.NewReader(body))
-		if reqErr != nil {
-			writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Gagal menyiapkan permintaan Hugging Face."})
+		prompt := fmt.Sprintf("%s Generate a distinct visual alternative, variation %d of 2. Use a different composition while keeping the same topic and quality.", basePrompt, i+1)
+		requestBody := map[string]any{
+			"contents":         []any{map[string]any{"parts": []any{map[string]any{"text": prompt}}}},
+			"generationConfig": map[string]any{"responseModalities": []string{"TEXT", "IMAGE"}},
+		}
+		body, err := json.Marshal(requestBody)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Gagal menyiapkan permintaan Gemini."})
 			return
 		}
-		hfReq.Header.Set("Authorization", "Bearer "+hfToken)
-		hfReq.Header.Set("Content-Type", "application/json")
-		hfReq.Header.Set("Accept", "image/png, application/json")
-		hfResp, callErr := client.Do(hfReq)
-		if callErr != nil {
-			log.Printf("Hugging Face image request failed: %v", callErr)
-			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Tidak dapat menghubungi Hugging Face. Coba lagi beberapa saat."})
+		endpoint := "https://generativelanguage.googleapis.com/v1beta/models/" + url.PathEscape(model) + ":generateContent?key=" + url.QueryEscape(apiKey)
+		geminiReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Gagal menyiapkan permintaan Gemini."})
 			return
 		}
-		imageBytes, readErr := io.ReadAll(io.LimitReader(hfResp.Body, 15*1024*1024))
-		contentType := strings.ToLower(strings.TrimSpace(strings.Split(hfResp.Header.Get("Content-Type"), ";")[0]))
-		hfResp.Body.Close()
+		geminiReq.Header.Set("Content-Type", "application/json")
+		geminiReq.Header.Set("Accept", "application/json")
+		resp, err := client.Do(geminiReq)
+		if err != nil {
+			log.Printf("Gemini image request failed: %v", err)
+			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Tidak dapat menghubungi Gemini API. Coba lagi."})
+			return
+		}
+		responseBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+		resp.Body.Close()
 		if readErr != nil {
-			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Respons gambar dari Hugging Face tidak dapat dibaca."})
+			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Respons Gemini tidak dapat dibaca."})
 			return
 		}
-		if hfResp.StatusCode < 200 || hfResp.StatusCode >= 300 {
-			message := "Hugging Face gagal membuat gambar. Periksa HF_TOKEN, izin Inference Providers, model, dan kuota akun."
-			if len(imageBytes) > 0 && (contentType == "application/json" || strings.Contains(contentType, "text")) {
-				var providerErr map[string]any
-				if json.Unmarshal(imageBytes, &providerErr) == nil {
-					if value, ok := providerErr["error"].(string); ok && value != "" {
-						message = value
-					}
-				}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			message := "Gemini gagal membuat gambar. Periksa API key, akses model, dan kuota API."
+			var apiErr struct {
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
 			}
-			log.Printf("Hugging Face image API returned status %d: %s", hfResp.StatusCode, message)
+			if json.Unmarshal(responseBytes, &apiErr) == nil && apiErr.Error.Message != "" {
+				message = apiErr.Error.Message
+			}
+			log.Printf("Gemini image API returned status %d: %s", resp.StatusCode, message)
 			status := http.StatusBadGateway
-			if hfResp.StatusCode == http.StatusTooManyRequests {
+			if resp.StatusCode == http.StatusTooManyRequests {
 				status = http.StatusTooManyRequests
+			}
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+				status = http.StatusBadGateway
 			}
 			writeJSON(w, status, APIResponse{Status: "error", Error: message})
 			return
 		}
-		if len(imageBytes) == 0 {
-			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Hugging Face mengembalikan respons kosong."})
+		var result struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text       string `json:"text"`
+						InlineData struct {
+							MimeType string `json:"mimeType"`
+							Data     string `json:"data"`
+						} `json:"inlineData"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		}
+		if err := json.Unmarshal(responseBytes, &result); err != nil {
+			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Format respons Gemini tidak dikenali."})
 			return
 		}
-		if strings.HasPrefix(contentType, "application/json") {
-			var falResult struct {
-				Images []struct {
-					URL string `json:"url"`
-				} `json:"images"`
+		found := false
+		for _, candidate := range result.Candidates {
+			for _, part := range candidate.Content.Parts {
+				if part.InlineData.Data == "" {
+					continue
+				}
+				mimeType := strings.ToLower(strings.TrimSpace(part.InlineData.MimeType))
+				if mimeType != "image/jpeg" && mimeType != "image/webp" && mimeType != "image/png" {
+					mimeType = "image/png"
+				}
+				if decoded, err := base64.StdEncoding.DecodeString(part.InlineData.Data); err == nil && len(decoded) > 0 {
+					images = append(images, generatedCover{B64JSON: base64.StdEncoding.EncodeToString(decoded), MIMEType: mimeType})
+					found = true
+					break
+				}
 			}
-			if err := json.Unmarshal(imageBytes, &falResult); err != nil || len(falResult.Images) == 0 || falResult.Images[0].URL == "" {
-				writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Respons Hugging Face tidak berisi URL gambar yang dikenali."})
-				return
-			}
-			imageReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, falResult.Images[0].URL, nil)
-			if err != nil {
-				writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "URL gambar dari provider tidak valid."})
-				return
-			}
-			imageResp, err := client.Do(imageReq)
-			if err != nil {
-				writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Gambar hasil AI tidak dapat diunduh."})
-				return
-			}
-			imageBytes, err = io.ReadAll(io.LimitReader(imageResp.Body, 15*1024*1024))
-			contentType = strings.ToLower(strings.TrimSpace(strings.Split(imageResp.Header.Get("Content-Type"), ";")[0]))
-			imageResp.Body.Close()
-			if err != nil || imageResp.StatusCode < 200 || imageResp.StatusCode >= 300 {
-				writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Gagal mengunduh gambar hasil AI."})
-				return
+			if found {
+				break
 			}
 		}
-		if len(imageBytes) == 0 || !strings.HasPrefix(contentType, "image/") {
-			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Hugging Face tidak mengembalikan data gambar. Periksa model, provider, dan kuota akun."})
+		if !found {
+			log.Printf("Gemini returned no image data: %s", string(responseBytes[:min(len(responseBytes), 1500)]))
+			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Gemini merespons tanpa data gambar. Pastikan model mendukung output gambar untuk API key ini."})
 			return
 		}
-		mimeType := contentType
-		if mimeType != "image/jpeg" && mimeType != "image/webp" {
-			mimeType = "image/png"
-		}
-		images = append(images, generatedCover{B64JSON: base64.StdEncoding.EncodeToString(imageBytes), MIMEType: mimeType})
 	}
-
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(aiCoverAPIResponse{Images: images})
