@@ -405,6 +405,7 @@
   line-height: 1.4;
   letter-spacing: -0.02em;
   -webkit-box-orient: vertical;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
 }
 
@@ -630,7 +631,74 @@
   }
 }
 
-.public-article-tags{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 16px}
-.public-article-tags a{display:inline-flex;padding:5px 9px;border-radius:999px;background:#edf5e7;color:#176c50;font-size:11px;font-weight:700;text-decoration:none}
+/* Ukuran gambar artikel ditentukan dari pilihan pada editor. */
+.public-article-figure-small { width: 25%; max-width: 100%; }
+.public-article-figure-medium { width: 50%; max-width: 100%; }
+.public-article-figure-large { width: 75%; max-width: 100%; }
+.public-article-figure-full { width: 100%; max-width: 100%; }
 
-.public-article-preview-notice{margin:0 0 18px;padding:12px 14px;border:1px solid #e9c46a;border-radius:10px;background:#fff8df;color:#7c5200;font-size:12px;font-weight:800;letter-spacing:.04em}
+/* Tata letak card affiliate yang konsisten di desktop dan ponsel. */
+.public-product-grid {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  align-items: stretch;
+  gap: 16px;
+  margin: 28px 0;
+}
+.public-product-grid-align-left { justify-content: start; }
+.public-product-grid-align-center { justify-content: center; }
+.public-product-grid-align-right { justify-content: end; }
+.public-product-grid-size-small { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
+.public-product-grid-size-medium { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.public-product-grid-size-large { grid-template-columns: minmax(0, 3fr); }
+.public-product-grid-size-full { grid-template-columns: minmax(0, 1fr); }
+.public-product-grid .public-product-card { width: auto; min-width: 0; max-width: 100%; }
+.public-product-empty {
+  margin: 24px 0;
+  padding: 14px 16px;
+  border: 1px dashed #d7b779;
+  border-radius: 12px;
+  background: #fffaf0;
+  color: #78591c;
+  font-size: .9rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 680px) {
+  .public-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 22px 0; }
+  .public-product-grid-size-medium,
+  .public-product-grid-size-large,
+  .public-product-grid-size-full { grid-template-columns: minmax(0, 1fr); }
+  .public-product-grid .public-product-card { width: 100%; }
+  .public-product-card > img,
+  .public-product-placeholder { height: 145px; padding: 9px; }
+  .public-product-info { padding: 12px; }
+  .public-product-info h3 { min-height: 0; font-size: .88rem; overflow-wrap: anywhere; }
+  .public-product-price { font-size: .92rem; overflow-wrap: anywhere; }
+  .public-product-link { width: 100%; min-height: 42px; padding: 10px 8px; font-size: .82rem; }
+}
+@media (max-width: 360px) {
+  .public-product-grid,
+  .public-product-grid-size-small { grid-template-columns: minmax(0, 1fr); }
+  .public-product-card > img,
+  .public-product-placeholder { height: 190px; }
+}
+
+/* Alignment gambar artikel publik mengikuti pilihan pada editor */
+.public-article-figure-align-left{margin-left:0;margin-right:auto}
+.public-article-figure-align-center{margin-left:auto;margin-right:auto}
+.public-article-figure-align-right{margin-left:auto;margin-right:0}
+
+
+.public-article-preview-notice {
+  margin: 0 0 1.25rem;
+  padding: .75rem 1rem;
+  border: 1px solid #c4b5fd;
+  border-radius: .75rem;
+  background: #f5f3ff;
+  color: #5b21b6;
+  font-size: .875rem;
+  font-weight: 600;
+}

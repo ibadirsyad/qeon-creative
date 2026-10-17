@@ -11,9 +11,13 @@ type Block = {
   productIds?: string[];
   url?: string;
   caption?: string;
+  imageSize?: 'small' | 'medium' | 'large' | 'full';
+  imageAlignment?: 'left' | 'center' | 'right';
+  productSize?: 'small' | 'medium' | 'large' | 'full';
+  productAlignment?: 'left' | 'center' | 'right';
 };
 type Article = {
-  id: string; title: string; slug: string; excerpt: string | null; tags: string[] | null;
+  id: string; title: string; slug: string; excerpt: string | null;
   content: string; cover_image_url: string | null; published_at: string | null;
   created_at: string; updated_at: string;
 };
@@ -54,14 +58,17 @@ export default function PublicArticle({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isPreview, setIsPreview] = useState(false);
+  const [productLoadError, setProductLoadError] = useState('');
 
   useEffect(() => {
     let active = true;
     async function load() {
-      setLoading(true); setError('');
+      setLoading(true); setError(''); setProductLoadError(''); setProducts([]);
       const previewToken = new URLSearchParams(window.location.search).get('preview');
       let articleData: Article | null = null;
 
+      // Pratinjau memakai data yang disimpan editor pada browser yang sama.
+      // Draft tidak perlu diterbitkan atau dibaca dari query publik Supabase.
       if (previewToken && /^[a-z0-9-]{10,100}$/i.test(previewToken)) {
         try {
           const rawPreview = localStorage.getItem(`affilicms_article_preview_${previewToken}`);
@@ -70,7 +77,7 @@ export default function PublicArticle({ slug }: { slug: string }) {
             if (parsed.article?.slug === slug) articleData = parsed.article;
           }
         } catch {
-          // Jika data pratinjau lokal tidak tersedia, lanjutkan ke artikel terbit.
+          // Jika data lokal tidak tersedia, lanjutkan mencari artikel yang sudah terbit.
         }
       }
 
@@ -78,7 +85,7 @@ export default function PublicArticle({ slug }: { slug: string }) {
         setIsPreview(true);
       } else {
         const { data, error: articleError } = await supabase.from('articles')
-          .select('id,title,slug,excerpt,tags,content,cover_image_url,published_at,created_at,updated_at')
+          .select('id,title,slug,excerpt,content,cover_image_url,published_at,created_at,updated_at')
           .eq('slug', slug).eq('status', 'published').maybeSingle();
         if (!active) return;
         if (articleError) {
@@ -94,10 +101,20 @@ export default function PublicArticle({ slug }: { slug: string }) {
       const blocks = parseBlocks(articleData.content);
       const ids = [...new Set(blocks.filter((b) => b.type === 'affiliate').flatMap((b) => b.productIds ?? []))];
       if (ids.length) {
-        const { data: productData } = await supabase.from('affiliate_products')
+        const { data: productData, error: productError } = await supabase.from('affiliate_products')
           .select('id,name,affiliate_url,image_url,price,currency').in('id', ids);
-        if (active) setProducts((productData ?? []) as Product[]);
-      } else if (active) setProducts([]);
+        if (active) {
+          setProducts((productData ?? []) as Product[]);
+          if (productError) {
+            console.error('Gagal memuat produk affiliate:', productError.message);
+            setProductLoadError('Produk affiliate belum dapat dimuat. Periksa kebijakan akses SELECT publik pada tabel affiliate_products di Supabase.');
+          } else if (!productData?.length) {
+            setProductLoadError('Produk untuk blok ini tidak ditemukan atau belum dapat dibaca oleh pengunjung publik. Periksa produk yang dipilih dan kebijakan akses SELECT di Supabase.');
+          }
+        }
+      } else if (active) {
+        setProducts([]);
+      }
       if (active) setLoading(false);
     }
     void load();
@@ -116,7 +133,6 @@ export default function PublicArticle({ slug }: { slug: string }) {
       {isPreview && <div className="public-article-preview-notice">PRATINJAU PENGUNJUNG · Artikel ini belum tentu sudah diterbitkan</div>}
       <div className="public-article-kicker">ARTIKEL</div>
       <h1>{article.title}</h1>
-      {article.tags?.length ? <div className="public-article-tags">{article.tags.map((tag) => <a href={`/#artikel`} key={tag}>{tag}</a>)}</div> : null}
       {article.excerpt && <p className="public-article-excerpt">{article.excerpt}</p>}
       <p className="public-article-date">Diterbitkan {new Date(article.published_at || article.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
       {article.cover_image_url && <img className="public-article-cover" src={article.cover_image_url} alt={article.title} />}
@@ -131,14 +147,17 @@ export default function PublicArticle({ slug }: { slug: string }) {
           if (block.type === 'quote') return <blockquote key={key}><InlineText text={block.text ?? ''} /></blockquote>;
           if (block.type === 'list') return <ul key={key}>{(block.items ?? []).filter(Boolean).map((item, i) => <li key={i}><InlineText text={item} /></li>)}</ul>;
           if (block.type === 'divider') return <hr key={key} />;
-          if (block.type === 'image') return block.url ? <figure key={key} className="public-article-figure"><img src={block.url} alt={block.caption ?? ''} /><figcaption>{block.caption}</figcaption></figure> : null;
+          if (block.type === 'image') return block.url ? <figure key={key} className={`public-article-figure public-article-figure-${block.imageSize ?? 'full'} public-article-figure-align-${block.imageAlignment ?? 'center'}`}><img src={block.url} alt={block.caption ?? ''} /><figcaption>{block.caption}</figcaption></figure> : null;
           if (block.type === 'tiktok') {
             const embed = block.url ? getTikTokEmbedUrl(block.url) : null;
             return <div key={key} className="public-tiktok-block">{embed ? <iframe src={embed} title="Video TikTok" loading="lazy" allow="fullscreen; encrypted-media; picture-in-picture" /> : <p>Video TikTok tidak dapat disematkan. <a href={block.url} target="_blank" rel="noreferrer">Tonton di TikTok</a></p>}</div>;
           }
           if (block.type === 'affiliate') {
             const selected = (block.productIds ?? []).map((id) => productMap.get(id)).filter((p): p is Product => Boolean(p));
-            return <div key={key} className="public-product-grid">{selected.map((p) => <section className="public-product-card" key={p.id}>
+            if (selected.length === 0) {
+              return <div key={key} className="public-product-empty" role="status">{productLoadError || 'Belum ada produk yang dipilih untuk blok affiliate ini.'}</div>;
+            }
+            return <div key={key} className={`public-product-grid public-product-grid-size-${block.productSize ?? 'full'} public-product-grid-align-${block.productAlignment ?? 'left'}`}>{selected.map((p) => <section className="public-product-card" key={p.id}>
               {p.image_url ? <img src={p.image_url} alt={p.name} /> : <div className="public-product-placeholder">Produk</div>}
               <div className="public-product-info"><h3>{p.name}</h3>{p.price != null && <p className="public-product-price">{p.currency ?? 'IDR'} {Number(p.price).toLocaleString('id-ID')}</p>}
                 <a className="public-product-link" href={p.affiliate_url} target="_blank" rel="sponsored noreferrer">Lihat Produk</a></div>
