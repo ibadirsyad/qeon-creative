@@ -511,7 +511,7 @@ export default function Artikel({ userId }: { userId: string }) {
                 <div><strong>Pilihan {index + 1}</strong><button type="button" className="article-secondary-button" onClick={() => { setCover(image.url); setUploadProgressMessage('Sampul AI dipilih. Simpan artikel untuk menerapkan perubahan.'); }}>Gunakan sampul ini</button></div>
               </article>)}</div>}
             </div>
-            <small>Gambar yang dipilih disimpan di bucket article-media. Generator memakai Hugging Face Inference Providers; kuota gratis terbatas dan ketersediaannya bergantung pada akun/model.</small>
+            <small>Gambar yang dipilih disimpan di bucket article-media. Pembuatan gambar menggunakan API OpenAI dan dapat dikenai biaya API.</small>
             <label className="article-upload-button article-cover-upload-button">
               {uploadingCover ? 'Mengunggah sampul...' : 'Pilih gambar sampul dari komputer'}
               <input

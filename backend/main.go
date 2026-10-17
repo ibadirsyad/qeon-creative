@@ -143,7 +143,7 @@ func aiCoverHandler(w http.ResponseWriter, r *http.Request) {
 	prompt := fmt.Sprintf("Create a professional landscape cover image for a web article. Article title/topic: %q. Visual style: %s. Additional art direction: %s. Composition should be polished, high-quality and easy to understand at thumbnail size. Keep important subjects away from edges. No watermarks, logos, fake UI, or long text. The website displays the article title separately.", input.Title, input.Style, input.Description)
 	model := strings.TrimSpace(os.Getenv("HF_IMAGE_MODEL"))
 	if model == "" {
-		model = "black-forest-labs/FLUX.1-dev"
+		model = "black-forest-labs/FLUX.1-schnell"
 	}
 	provider := strings.TrimSpace(os.Getenv("HF_IMAGE_PROVIDER"))
 	if provider == "" {
@@ -153,20 +153,35 @@ func aiCoverHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Konfigurasi model Hugging Face tidak valid."})
 		return
 	}
+	// Hugging Face memetakan FLUX.1-schnell ke provider model fal-ai/flux/schnell.
+	// Endpoint provider-specific menggunakan skema prompt milik Fal, bukan skema generic `inputs`.
+	providerModel := ""
+	if provider == "fal-ai" {
+		switch model {
+		case "black-forest-labs/FLUX.1-schnell":
+			providerModel = "flux/schnell"
+		case "black-forest-labs/FLUX.1-dev":
+			providerModel = "flux/dev"
+		default:
+			writeJSON(w, http.StatusBadRequest, APIResponse{Status: "error", Error: "Model ini belum dipetakan untuk provider fal-ai. Gunakan black-forest-labs/FLUX.1-schnell atau FLUX.1-dev."})
+			return
+		}
+	} else {
+		writeJSON(w, http.StatusBadRequest, APIResponse{Status: "error", Error: "Provider yang dikonfigurasi belum didukung oleh handler ini. Gunakan HF_IMAGE_PROVIDER=fal-ai."})
+		return
+	}
 
-	// Text-to-image API mengembalikan byte gambar mentah. Buat dua variasi dengan seed berbeda.
+	// Buat dua variasi. Fal mengembalikan URL gambar di JSON; backend mengambil gambar
+	// tersebut dan mengirimnya ke frontend sebagai base64 agar tidak mengekspos token.
 	client := &http.Client{Timeout: 150 * time.Second}
 	images := make([]generatedCover, 0, 2)
 	for i := 0; i < 2; i++ {
 		body, _ := json.Marshal(map[string]any{
-			"inputs": fmt.Sprintf("%s Variation %d. Make this variation visually distinct while preserving the subject and style.", prompt, i+1),
-			"parameters": map[string]any{
-				"width": 1024, "height": 576, "num_inference_steps": 4,
-				"negative_prompt": "watermark, logo, blurry, low quality, distorted, unreadable text",
-				"seed":            time.Now().UnixNano() + int64(i),
-			},
+			"prompt":     fmt.Sprintf("%s Variation %d. Make this variation visually distinct while preserving the subject and style.", prompt, i+1),
+			"image_size": "landscape_16_9",
+			"num_images": 1,
 		})
-		endpoint := "https://router.huggingface.co/" + provider + "/models/" + model
+		endpoint := "https://router.huggingface.co/fal-ai/" + providerModel
 		hfReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, bytes.NewReader(body))
 		if reqErr != nil {
 			writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Gagal menyiapkan permintaan Hugging Face."})
@@ -206,8 +221,40 @@ func aiCoverHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, status, APIResponse{Status: "error", Error: message})
 			return
 		}
+		if len(imageBytes) == 0 {
+			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Hugging Face mengembalikan respons kosong."})
+			return
+		}
+		if strings.HasPrefix(contentType, "application/json") {
+			var falResult struct {
+				Images []struct {
+					URL string `json:"url"`
+				} `json:"images"`
+			}
+			if err := json.Unmarshal(imageBytes, &falResult); err != nil || len(falResult.Images) == 0 || falResult.Images[0].URL == "" {
+				writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Respons Hugging Face tidak berisi URL gambar yang dikenali."})
+				return
+			}
+			imageReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, falResult.Images[0].URL, nil)
+			if err != nil {
+				writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "URL gambar dari provider tidak valid."})
+				return
+			}
+			imageResp, err := client.Do(imageReq)
+			if err != nil {
+				writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Gambar hasil AI tidak dapat diunduh."})
+				return
+			}
+			imageBytes, err = io.ReadAll(io.LimitReader(imageResp.Body, 15*1024*1024))
+			contentType = strings.ToLower(strings.TrimSpace(strings.Split(imageResp.Header.Get("Content-Type"), ";")[0]))
+			imageResp.Body.Close()
+			if err != nil || imageResp.StatusCode < 200 || imageResp.StatusCode >= 300 {
+				writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Gagal mengunduh gambar hasil AI."})
+				return
+			}
+		}
 		if len(imageBytes) == 0 || !strings.HasPrefix(contentType, "image/") {
-			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Hugging Face tidak mengembalikan data gambar. Periksa apakah model mendukung text-to-image pada provider tersebut."})
+			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Hugging Face tidak mengembalikan data gambar. Periksa model, provider, dan kuota akun."})
 			return
 		}
 		mimeType := contentType
