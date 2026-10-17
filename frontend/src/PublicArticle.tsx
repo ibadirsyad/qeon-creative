@@ -25,6 +25,8 @@ type Product = {
   id: string; name: string; affiliate_url: string; image_url: string | null;
   price: number | null; currency: string | null;
 };
+type SiteSettings = { site_name: string; tagline: string; logo_url: string; footer_text: string };
+type RelatedArticle = { id: string; title: string; slug: string; excerpt: string | null; cover_image_url: string | null; published_at: string | null; created_at: string };
 
 function parseBlocks(content: string): Block[] {
   try {
@@ -59,6 +61,8 @@ export default function PublicArticle({ slug }: { slug: string }) {
   const [error, setError] = useState('');
   const [isPreview, setIsPreview] = useState(false);
   const [productLoadError, setProductLoadError] = useState('');
+  const [siteSettings, setSiteSettings] = useState<SiteSettings>({ site_name: 'AffiliCMS', tagline: '', logo_url: '', footer_text: 'Konten dan rekomendasi pilihan.' });
+  const [relatedArticles, setRelatedArticles] = useState<RelatedArticle[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -121,14 +125,59 @@ export default function PublicArticle({ slug }: { slug: string }) {
     return () => { active = false; };
   }, [slug]);
 
+
+  useEffect(() => {
+    let active = true;
+    const loadSettings = async () => {
+      const { data, error } = await supabase.from('website_settings')
+        .select('site_name,tagline,logo_url,footer_text').eq('id', 'main').maybeSingle();
+      if (active && !error && data) {
+        setSiteSettings({
+          site_name: data.site_name?.trim() || 'AffiliCMS',
+          tagline: data.tagline || '',
+          logo_url: data.logo_url || '',
+          footer_text: data.footer_text || 'Konten dan rekomendasi pilihan.',
+        });
+      }
+    };
+    void loadSettings();
+    const refresh = () => { void loadSettings(); };
+    window.addEventListener('website-settings-updated', refresh);
+    window.addEventListener('storage', refresh);
+    return () => { active = false; window.removeEventListener('website-settings-updated', refresh); window.removeEventListener('storage', refresh); };
+  }, []);
+
+  useEffect(() => {
+    if (siteSettings.site_name) document.title = `${article?.title ? `${article.title} | ` : ''}${siteSettings.site_name}`;
+    if (siteSettings.logo_url) {
+      let favicon = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+      if (!favicon) { favicon = document.createElement('link'); favicon.rel = 'icon'; document.head.appendChild(favicon); }
+      favicon.href = siteSettings.logo_url;
+    }
+  }, [siteSettings, article?.title]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadRelatedArticles() {
+      const { data, error } = await supabase.from('articles')
+        .select('id,title,slug,excerpt,cover_image_url,published_at,created_at')
+        .eq('status', 'published').order('published_at', { ascending: false }).limit(8);
+      if (!active) return;
+      if (error) { console.error('Gagal memuat artikel terkait:', error.message); return; }
+      setRelatedArticles(((data ?? []) as RelatedArticle[]).filter((item) => item.slug !== slug).slice(0, 6));
+    }
+    void loadRelatedArticles();
+    return () => { active = false; };
+  }, [slug]);
+
   if (loading) return <main className="public-article-shell"><p>Memuat artikel...</p></main>;
-  if (error || !article) return <main className="public-article-shell"><a className="public-back-link" href="/">← AffiliCMS</a><section className="public-article-not-found"><h1>{error ? 'Terjadi kendala' : 'Artikel tidak ditemukan'}</h1><p>{error || 'Artikel ini tidak tersedia atau belum diterbitkan.'}</p></section></main>;
+  if (error || !article) return <main className="public-article-shell"><a className="public-back-link" href="/">← {siteSettings.site_name}</a><section className="public-article-not-found"><h1>{error ? 'Terjadi kendala' : 'Artikel tidak ditemukan'}</h1><p>{error || 'Artikel ini tidak tersedia atau belum diterbitkan.'}</p></section></main>;
 
   const blocks = parseBlocks(article.content);
   const productMap = new Map(products.map((p) => [p.id, p]));
 
-  return <main className="public-article-shell">
-    <header className="public-article-header"><a className="public-brand" href="/">AffiliCMS</a><a className="public-back-link" href="/">Kembali ke beranda</a></header>
+  return <main className="public-article-shell" id="top">
+    <header className="public-article-header"><a className="public-brand" href="/" aria-label={`${siteSettings.site_name} beranda`}>{siteSettings.logo_url ? <img className="public-brand-logo" src={siteSettings.logo_url} alt="" /> : <span className="public-brand-mark">{siteSettings.site_name.trim().charAt(0).toUpperCase() || 'A'}</span>}<span className="public-brand-copy"><strong>{siteSettings.site_name}</strong>{siteSettings.tagline && <small>{siteSettings.tagline}</small>}</span></a><a className="public-back-link" href="/">Kembali ke beranda</a></header>
     <article className="public-article">
       {isPreview && <div className="public-article-preview-notice">PRATINJAU PENGUNJUNG · Artikel ini belum tentu sudah diterbitkan</div>}
       <div className="public-article-kicker">ARTIKEL</div>
@@ -167,6 +216,18 @@ export default function PublicArticle({ slug }: { slug: string }) {
         })}
       </div>
     </article>
-    <footer className="public-article-footer">Dikelola dengan AffiliCMS</footer>
+    {relatedArticles.length > 0 && <section className="public-related-section" aria-label="Artikel lainnya">
+      <div className="public-related-heading"><div><span className="public-related-kicker">LANJUTKAN MEMBACA</span><h2>Artikel <em>lainnya.</em></h2></div><a href="/">Lihat semua artikel <span>↗</span></a></div>
+      <div className="public-related-carousel">{relatedArticles.map((item, index) => <article className="public-related-card" key={item.id}>
+        <a className="public-related-image" href={`/artikel/${encodeURIComponent(item.slug)}`} aria-label={`Baca ${item.title}`}>
+          {item.cover_image_url ? <img src={item.cover_image_url} alt={item.title} loading="lazy" /> : <div className={`public-related-placeholder tone-${index % 3}`}><span>{siteSettings.site_name.trim().charAt(0).toUpperCase() || 'A'}.</span><small>ARTIKEL PILIHAN</small></div>}
+        </a>
+        <div className="public-related-meta">{new Date(item.published_at || item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+        <h3><a href={`/artikel/${encodeURIComponent(item.slug)}`}>{item.title}</a></h3>
+        {item.excerpt && <p>{item.excerpt}</p>}
+        <a className="public-related-read" href={`/artikel/${encodeURIComponent(item.slug)}`}>Baca artikel <span>↗</span></a>
+      </article>)}</div>
+    </section>}
+    <footer className="public-article-footer"><a className="public-footer-brand" href="/">{siteSettings.logo_url ? <img src={siteSettings.logo_url} alt="" /> : <span>{siteSettings.site_name.trim().charAt(0).toUpperCase() || 'A'}</span>}<strong>{siteSettings.site_name}</strong></a><span>© {new Date().getFullYear()} {siteSettings.site_name} · {siteSettings.footer_text}</span><a href="#top" onClick={(event) => { event.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Kembali ke atas ↑</a></footer>
   </main>;
 }
