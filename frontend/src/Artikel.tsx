@@ -29,8 +29,6 @@ type Article = {
   updated_at: string;
 };
 
-type GeneratedCover = { id: string; url: string };
-
 type Product = {
   id: string;
   name: string;
@@ -117,10 +115,6 @@ export default function Artikel({ userId }: { userId: string }) {
   const [preview, setPreview] = useState(false);
   const [uploadingBlockId, setUploadingBlockId] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
-  const [generatingCovers, setGeneratingCovers] = useState(false);
-  const [coverPrompt, setCoverPrompt] = useState('');
-  const [coverStyle, setCoverStyle] = useState('modern editorial');
-  const [generatedCovers, setGeneratedCovers] = useState<GeneratedCover[]>([]);
   const [uploadProgressMessage, setUploadProgressMessage] = useState('');
   const textareas = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
@@ -224,78 +218,6 @@ export default function Artikel({ userId }: { userId: string }) {
     updateBlock(blockId, { url: data.publicUrl });
     setUploadProgressMessage('Gambar berhasil diunggah.');
     setUploadingBlockId(null);
-  }
-
-  async function generateCoverImages() {
-    const cleanTitle = title.trim();
-    if (!cleanTitle) {
-      setError('Isi judul artikel terlebih dahulu agar AI dapat membuat sampul yang sesuai.');
-      return;
-    }
-
-    setError('');
-    setNotice('');
-    setGeneratedCovers([]);
-    setGeneratingCovers(true);
-    try {
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-      if (sessionError || !accessToken) {
-        throw new Error('Sesi login tidak ditemukan. Silakan login ulang.');
-      }
-
-      const apiBase = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '');
-      if (!apiBase) throw new Error('VITE_API_URL belum diatur pada environment frontend.');
-
-      const response = await fetch(`${apiBase}/api/ai/cover`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          title: cleanTitle,
-          description: coverPrompt.trim(),
-          style: coverStyle,
-          count: 2,
-        }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result.error || `AI gagal membuat gambar (HTTP ${response.status}).`);
-      }
-      if (!Array.isArray(result.images) || result.images.length === 0) {
-        throw new Error('AI tidak mengembalikan gambar. Silakan coba lagi.');
-      }
-
-      const uploaded: GeneratedCover[] = [];
-      for (let index = 0; index < result.images.length; index += 1) {
-        const image = result.images[index] as { b64Json?: string; mimeType?: string };
-        if (!image.b64Json) continue;
-        const mimeType = image.mimeType || 'image/png';
-        const binary = atob(image.b64Json);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-        const blob = new Blob([bytes], { type: mimeType });
-        const extension = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/webp' ? 'webp' : 'png';
-        const path = `${userId}/covers/ai-${Date.now()}-${index + 1}-${newId()}.${extension}`;
-        const { error: uploadError } = await supabase.storage.from('article-media').upload(path, blob, {
-          cacheControl: '3600', upsert: false, contentType: mimeType,
-        });
-        if (uploadError) {
-          throw new Error(`Gambar AI dibuat tetapi gagal disimpan ke Storage: ${uploadError.message}. Periksa policy bucket article-media.`);
-        }
-        const { data: publicData } = supabase.storage.from('article-media').getPublicUrl(path);
-        uploaded.push({ id: path, url: publicData.publicUrl });
-      }
-      if (!uploaded.length) throw new Error('Gambar AI diterima tetapi tidak dapat diproses.');
-      setGeneratedCovers(uploaded);
-      setNotice(`Berhasil membuat ${uploaded.length} pilihan sampul. Klik “Gunakan sampul ini” untuk memilih.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Terjadi kesalahan saat membuat sampul AI.');
-    } finally {
-      setGeneratingCovers(false);
-    }
   }
 
   async function uploadCoverImage(file?: File) {
@@ -488,30 +410,6 @@ export default function Artikel({ userId }: { userId: string }) {
             <textarea rows={2} value={excerpt} onChange={(e) => setExcerpt(e.target.value)} placeholder="Ringkasan artikel..." /></label>
           <div className="article-field article-field-full">
             <span>Gambar sampul (opsional)</span>
-            <div className="ai-cover-panel">
-              <div className="ai-cover-panel-heading"><span className="ai-cover-sparkle" aria-hidden="true">✦</span><div><strong>Generator Sampul AI</strong><small>Buat 2 pilihan sampul berdasarkan judul artikel, lalu pilih yang paling sesuai.</small></div></div>
-              <label className="ai-cover-field"><span>Gaya visual</span>
-                <select value={coverStyle} onChange={(e) => setCoverStyle(e.target.value)} disabled={generatingCovers}>
-                  <option value="modern editorial">Modern editorial</option>
-                  <option value="photorealistic">Fotorealistis</option>
-                  <option value="minimalist clean design">Minimalis dan bersih</option>
-                  <option value="bold vibrant social media design">Cerah dan menarik untuk media sosial</option>
-                  <option value="cinematic premium photography">Fotografi sinematik premium</option>
-                  <option value="3D illustration">Ilustrasi 3D</option>
-                </select>
-              </label>
-              <label className="ai-cover-field"><span>Deskripsi tambahan (opsional)</span>
-                <textarea rows={2} maxLength={800} value={coverPrompt} onChange={(e) => setCoverPrompt(e.target.value)} disabled={generatingCovers} placeholder="Contoh: nuansa biru, objek utama di tengah, sisakan ruang kosong untuk judul..." />
-              </label>
-              <button type="button" className="ai-cover-generate-button" onClick={() => void generateCoverImages()} disabled={generatingCovers || uploadingCover || !title.trim()}>
-                {generatingCovers ? <><span className="ai-cover-spinner" aria-hidden="true" /> Sedang membuat 2 sampul...</> : '✦ Buat 2 Sampul dengan AI'}
-              </button>
-              {generatedCovers.length > 0 && <div className="ai-cover-results" aria-label="Pilihan sampul hasil AI">{generatedCovers.map((image, index) => <article className="ai-cover-result" key={image.id}>
-                <img src={image.url} alt={`Pilihan sampul AI ${index + 1}`} />
-                <div><strong>Pilihan {index + 1}</strong><button type="button" className="article-secondary-button" onClick={() => { setCover(image.url); setUploadProgressMessage('Sampul AI dipilih. Simpan artikel untuk menerapkan perubahan.'); }}>Gunakan sampul ini</button></div>
-              </article>)}</div>}
-            </div>
-            <small>Gambar yang dipilih disimpan di bucket article-media. Pembuatan gambar menggunakan API OpenAI dan dapat dikenai biaya API.</small>
             <label className="article-upload-button article-cover-upload-button">
               {uploadingCover ? 'Mengunggah sampul...' : 'Pilih gambar sampul dari komputer'}
               <input

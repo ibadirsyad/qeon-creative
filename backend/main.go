@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,8 +18,7 @@ import (
 )
 
 const (
-	serverAddress = ":8080"
-	maxHTMLSize   = 3 * 1024 * 1024
+	maxHTMLSize = 3 * 1024 * 1024
 )
 
 type APIResponse struct {
@@ -38,10 +35,15 @@ type tikTokOEmbedResponse struct {
 }
 
 func main() {
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "8080"
+	}
+	serverAddress := ":" + port
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler)
 	mux.HandleFunc("/api/affiliate/preview-image", previewImageHandler)
-	mux.HandleFunc("/api/ai/cover", aiCoverHandler)
 
 	server := &http.Server{
 		Addr:              serverAddress,
@@ -54,201 +56,6 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
-}
-
-type aiCoverRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Style       string `json:"style"`
-	Count       int    `json:"count"`
-}
-
-type generatedCover struct {
-	B64JSON  string `json:"b64Json"`
-	MIMEType string `json:"mimeType"`
-}
-
-type aiCoverAPIResponse struct {
-	Error  string           `json:"error,omitempty"`
-	Images []generatedCover `json:"images,omitempty"`
-}
-
-func aiCoverHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, APIResponse{Status: "error", Error: "Gunakan metode POST"})
-		return
-	}
-	apiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
-	supabaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("SUPABASE_URL")), "/")
-	supabaseAnonKey := strings.TrimSpace(os.Getenv("SUPABASE_ANON_KEY"))
-	if apiKey == "" || supabaseURL == "" || supabaseAnonKey == "" {
-		writeJSON(w, http.StatusServiceUnavailable, APIResponse{Status: "error", Error: "Backend belum dikonfigurasi. Periksa GEMINI_API_KEY, SUPABASE_URL, dan SUPABASE_ANON_KEY."})
-		return
-	}
-
-	// Validasi sesi Supabase sebelum mengizinkan pemakaian API gambar.
-	token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	if token == "" {
-		writeJSON(w, http.StatusUnauthorized, APIResponse{Status: "error", Error: "Login diperlukan untuk menggunakan generator AI."})
-		return
-	}
-	authReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, supabaseURL+"/auth/v1/user", nil)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Tidak dapat memvalidasi sesi login."})
-		return
-	}
-	authReq.Header.Set("Authorization", "Bearer "+token)
-	authReq.Header.Set("apikey", supabaseAnonKey)
-	authResp, err := (&http.Client{Timeout: 12 * time.Second}).Do(authReq)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Validasi login ke Supabase gagal. Coba lagi."})
-		return
-	}
-	io.Copy(io.Discard, io.LimitReader(authResp.Body, 64*1024))
-	authResp.Body.Close()
-	if authResp.StatusCode != http.StatusOK {
-		writeJSON(w, http.StatusUnauthorized, APIResponse{Status: "error", Error: "Sesi login tidak valid atau sudah kedaluwarsa. Silakan login ulang."})
-		return
-	}
-
-	var input aiCoverRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 12*1024))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
-		writeJSON(w, http.StatusBadRequest, APIResponse{Status: "error", Error: "Data permintaan tidak valid."})
-		return
-	}
-	input.Title = strings.TrimSpace(input.Title)
-	input.Description = strings.TrimSpace(input.Description)
-	input.Style = strings.TrimSpace(input.Style)
-	if input.Title == "" || len(input.Title) > 180 {
-		writeJSON(w, http.StatusBadRequest, APIResponse{Status: "error", Error: "Judul wajib diisi dan maksimal 180 karakter."})
-		return
-	}
-	if len(input.Description) > 800 {
-		writeJSON(w, http.StatusBadRequest, APIResponse{Status: "error", Error: "Deskripsi tambahan maksimal 800 karakter."})
-		return
-	}
-	allowedStyles := map[string]bool{
-		"modern editorial": true, "photorealistic": true, "minimalist clean design": true,
-		"bold vibrant social media design": true, "cinematic premium photography": true, "3D illustration": true,
-	}
-	if !allowedStyles[input.Style] {
-		input.Style = "modern editorial"
-	}
-
-	model := strings.TrimSpace(os.Getenv("GEMINI_IMAGE_MODEL"))
-	if model == "" {
-		model = "gemini-3.1-flash-lite-image"
-	}
-	if strings.Contains(model, "/") || strings.Contains(model, "..") {
-		writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Konfigurasi GEMINI_IMAGE_MODEL tidak valid."})
-		return
-	}
-	basePrompt := fmt.Sprintf("Create a professional 16:9 landscape cover image for a web article. Article title/topic: %q. Visual style: %s. Additional art direction: %s. Polished editorial composition, clear focal point, readable at thumbnail size, important subjects away from edges. Do not render text, logos, watermarks, or fake UI; the website will show the article title separately.", input.Title, input.Style, input.Description)
-
-	// Gemini image generation returns image bytes in candidates[].content.parts[].inlineData.
-	// Make two separate requests because the API does not accept OpenAI-style n=2 here.
-	client := &http.Client{Timeout: 150 * time.Second}
-	images := make([]generatedCover, 0, 2)
-	for i := 0; i < 2; i++ {
-		prompt := fmt.Sprintf("%s Generate a distinct visual alternative, variation %d of 2. Use a different composition while keeping the same topic and quality.", basePrompt, i+1)
-		requestBody := map[string]any{
-			"contents":         []any{map[string]any{"parts": []any{map[string]any{"text": prompt}}}},
-			"generationConfig": map[string]any{"responseModalities": []string{"TEXT", "IMAGE"}},
-		}
-		body, err := json.Marshal(requestBody)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Gagal menyiapkan permintaan Gemini."})
-			return
-		}
-		endpoint := "https://generativelanguage.googleapis.com/v1beta/models/" + url.PathEscape(model) + ":generateContent?key=" + url.QueryEscape(apiKey)
-		geminiReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, bytes.NewReader(body))
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, APIResponse{Status: "error", Error: "Gagal menyiapkan permintaan Gemini."})
-			return
-		}
-		geminiReq.Header.Set("Content-Type", "application/json")
-		geminiReq.Header.Set("Accept", "application/json")
-		resp, err := client.Do(geminiReq)
-		if err != nil {
-			log.Printf("Gemini image request failed: %v", err)
-			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Tidak dapat menghubungi Gemini API. Coba lagi."})
-			return
-		}
-		responseBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
-		resp.Body.Close()
-		if readErr != nil {
-			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Respons Gemini tidak dapat dibaca."})
-			return
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			message := "Gemini gagal membuat gambar. Periksa API key, akses model, dan kuota API."
-			var apiErr struct {
-				Error struct {
-					Message string `json:"message"`
-				} `json:"error"`
-			}
-			if json.Unmarshal(responseBytes, &apiErr) == nil && apiErr.Error.Message != "" {
-				message = apiErr.Error.Message
-			}
-			log.Printf("Gemini image API returned status %d: %s", resp.StatusCode, message)
-			status := http.StatusBadGateway
-			if resp.StatusCode == http.StatusTooManyRequests {
-				status = http.StatusTooManyRequests
-			}
-			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-				status = http.StatusBadGateway
-			}
-			writeJSON(w, status, APIResponse{Status: "error", Error: message})
-			return
-		}
-		var result struct {
-			Candidates []struct {
-				Content struct {
-					Parts []struct {
-						Text       string `json:"text"`
-						InlineData struct {
-							MimeType string `json:"mimeType"`
-							Data     string `json:"data"`
-						} `json:"inlineData"`
-					} `json:"parts"`
-				} `json:"content"`
-			} `json:"candidates"`
-		}
-		if err := json.Unmarshal(responseBytes, &result); err != nil {
-			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Format respons Gemini tidak dikenali."})
-			return
-		}
-		found := false
-		for _, candidate := range result.Candidates {
-			for _, part := range candidate.Content.Parts {
-				if part.InlineData.Data == "" {
-					continue
-				}
-				mimeType := strings.ToLower(strings.TrimSpace(part.InlineData.MimeType))
-				if mimeType != "image/jpeg" && mimeType != "image/webp" && mimeType != "image/png" {
-					mimeType = "image/png"
-				}
-				if decoded, err := base64.StdEncoding.DecodeString(part.InlineData.Data); err == nil && len(decoded) > 0 {
-					images = append(images, generatedCover{B64JSON: base64.StdEncoding.EncodeToString(decoded), MIMEType: mimeType})
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
-		if !found {
-			log.Printf("Gemini returned no image data: %s", string(responseBytes[:min(len(responseBytes), 1500)]))
-			writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: "Gemini merespons tanpa data gambar. Pastikan model mendukung output gambar untuk API key ini."})
-			return
-		}
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(aiCoverAPIResponse{Images: images})
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -281,10 +88,15 @@ func previewImageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log diagnostik: jangan log seluruh URL karena parameter tracking bisa berisi token pribadi.
+	query := target.Query()
+	log.Printf("[preview-image] host=%s path=%s", target.Hostname(), target.Path)
+	log.Printf("[preview-image] og_info ditemukan=%t panjang=%d", query.Has("og_info"), len(query.Get("og_info")))
+
 	// Beberapa link berbagi produk Tokopedia/TikTok Shop menyertakan
-	// metadata gambar langsung di parameter og_info. Baca lebih dahulu
-	// agar tidak bergantung pada HTML yang mungkin dirender oleh JavaScript.
+	// metadata gambar langsung di parameter og_info.
 	if imageURL := extractSharedProductImage(target); imageURL != "" {
+		log.Printf("[preview-image] gambar berhasil diambil dari og_info; host gambar=%s", hostFromURL(imageURL))
 		writeJSON(w, http.StatusOK, APIResponse{
 			Status:   "ok",
 			Message:  "Gambar ditemukan dari metadata og_info pada link berbagi",
@@ -343,6 +155,28 @@ func previewImageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer response.Body.Close()
 
+	// Log hasil redirect tanpa mencetak query string/token affiliate.
+	finalURL := response.Request.URL
+	log.Printf("[preview-image] hasil redirect host=%s path=%s status=%d",
+		finalURL.Hostname(), finalURL.Path, response.StatusCode)
+	log.Printf("[preview-image] og_info pada URL akhir ditemukan=%t panjang=%d",
+		finalURL.Query().Has("og_info"), len(finalURL.Query().Get("og_info")))
+
+	// Beberapa short link baru membawa metadata pada URL tujuan setelah redirect.
+	// Coba baca lagi sebelum memproses HTML.
+	if finalURL.String() != target.String() {
+		if imageURL := extractSharedProductImage(finalURL); imageURL != "" {
+			log.Printf("[preview-image] gambar berhasil diambil dari og_info URL akhir; host gambar=%s",
+				hostFromURL(imageURL))
+			writeJSON(w, http.StatusOK, APIResponse{
+				Status:   "ok",
+				Message:  "Gambar ditemukan dari metadata og_info setelah redirect",
+				ImageURL: imageURL,
+			})
+			return
+		}
+	}
+
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		writeJSON(w, http.StatusBadGateway, APIResponse{Status: "error", Error: fmt.Sprintf("Halaman tujuan menolak permintaan (HTTP %d). Coba link produk lengkap atau upload gambar manual.", response.StatusCode)})
 		return
@@ -366,15 +200,24 @@ func previewImageHandler(w http.ResponseWriter, r *http.Request) {
 
 	imageURL, err := extractImageURL(body, response.Request.URL)
 	if err != nil {
-		log.Printf("Metadata gambar tidak ditemukan pada %s: %v", response.Request.URL.Host, err)
+		log.Printf("[preview-image] metadata HTML tidak ditemukan; host=%s status=%d content_type=%q ukuran_body=%d error=%v",
+			response.Request.URL.Host, response.StatusCode, contentType, len(body), err)
 		writeJSON(w, http.StatusUnprocessableEntity, APIResponse{
 			Status: "error",
-			Error:  "Halaman tujuan tidak menyediakan metadata gambar yang bisa dibaca. Link affiliate pendek atau halaman yang dirender dengan JavaScript mungkin tidak didukung; coba link produk langsung atau upload gambar manual.",
+			Error:  "Gambar tidak ditemukan. Link pendek ini tidak membawa og_info dan halaman tujuan tidak menyediakan metadata gambar yang dapat dibaca. Coba tempel link berbagi produk lengkap yang memiliki parameter og_info, atau masukkan URL gambar/upload gambar secara manual.",
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, APIResponse{Status: "ok", Message: "Gambar ditemukan dari metadata halaman", ImageURL: imageURL})
+}
+
+func hostFromURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "invalid"
+	}
+	return parsed.Hostname()
 }
 
 // extractSharedProductImage membaca metadata og_info dari link berbagi produk.
@@ -385,6 +228,7 @@ func extractSharedProductImage(target *url.URL) string {
 
 	raw := target.Query().Get("og_info")
 	if raw == "" {
+		log.Printf("[preview-image] og_info kosong pada URL target")
 		return ""
 	}
 
@@ -392,32 +236,30 @@ func extractSharedProductImage(target *url.URL) string {
 		Title string `json:"title"`
 		Image string `json:"image"`
 	}
+
 	if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
+		log.Printf("[preview-image] gagal decode og_info JSON: %v", err)
 		return ""
 	}
 
 	candidate := strings.TrimSpace(metadata.Image)
+	if candidate == "" {
+		log.Printf("[preview-image] JSON og_info tidak memiliki field image")
+		return ""
+	}
 	parsed, err := url.Parse(candidate)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+	if err != nil || parsed.Scheme != "https" ||
+		parsed.Host == "" || parsed.User != nil {
+		log.Printf("[preview-image] URL gambar dari og_info tidak valid")
 		return ""
 	}
 
-	// Hanya izinkan host CDN gambar yang dikenal dari ByteDance/TikTok Shop.
 	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
-	allowedImageDomains := []string{
-		"ibyteimg.com",
-		"ibytedtos.com",
-		"byteimg.com",
-		"byteoversea.com",
-	}
-	allowed := false
-	for _, domain := range allowedImageDomains {
-		if host == domain || strings.HasSuffix(host, "."+domain) {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
+	if !(host == "ibyteimg.com" || strings.HasSuffix(host, ".ibyteimg.com") ||
+		host == "ibytedtos.com" || strings.HasSuffix(host, ".ibytedtos.com") ||
+		host == "byteimg.com" || strings.HasSuffix(host, ".byteimg.com") ||
+		host == "byteoversea.com" || strings.HasSuffix(host, ".byteoversea.com")) {
+		log.Printf("[preview-image] host gambar og_info tidak diizinkan: %s", host)
 		return ""
 	}
 
@@ -495,7 +337,7 @@ func validateAffiliateURL(u *url.URL) error {
 		return fmt.Errorf("host URL tidak ditemukan")
 	}
 	if !isAllowedAffiliateHost(host) {
-		return fmt.Errorf("domain affiliate belum didukung: " + host)
+		return fmt.Errorf("domain affiliate belum didukung: %s", host)
 	}
 	port := u.Port()
 	if port != "" && port != "80" && port != "443" {
@@ -689,10 +531,16 @@ func appendJSONImage(result []string, value any) []string {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin == "http://localhost:5173" || origin == "http://127.0.0.1:5173" || origin == "https://qeon-creative.vercel.app" {
+		allowedOrigins := map[string]bool{
+			"https://qeon-creative.vercel.app": true,
+			"http://localhost:5173":            true,
+			"http://127.0.0.1:5173":            true,
+		}
+
+		if allowedOrigins[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Add("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		}
 		if r.Method == http.MethodOptions {
