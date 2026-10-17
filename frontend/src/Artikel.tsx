@@ -98,7 +98,6 @@ export default function Artikel({ userId }: { userId: string }) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
-  const [productSearch, setProductSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
@@ -350,8 +349,6 @@ export default function Artikel({ userId }: { userId: string }) {
   const filteredArticles = articles.filter((a) =>
     `${a.title} ${a.slug} ${a.excerpt ?? ''}`.toLowerCase().includes(search.toLowerCase()));
 
-  const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(productSearch.toLowerCase()));
 
   function renderBlock(block: ArticleBlock) {
     if (block.type === 'divider') return <hr className="block-preview-divider" />;
@@ -464,8 +461,16 @@ export default function Artikel({ userId }: { userId: string }) {
               <textarea ref={(node) => { textareas.current[block.id] = node; }} rows={block.type === 'text' ? 4 : 3} value={block.text ?? ''} onChange={(e) => updateBlock(block.id, { text: e.target.value })} placeholder={block.type === 'text' ? 'Tulis paragraf...' : 'Tulis kutipan...'} />
             </div>}
             {block.type === 'list' && <div className="block-list-editor">{(block.items ?? ['']).map((item, i) => <div className="block-list-row" key={i}><input value={item} onChange={(e) => updateBlock(block.id, { items: (block.items ?? []).map((v, n) => n === i ? e.target.value : v) })} placeholder={`Item ${i + 1}`} /><button type="button" onClick={() => updateBlock(block.id, { items: (block.items ?? []).filter((_, n) => n !== i) })}>×</button></div>)}<button type="button" className="article-secondary-button" onClick={() => updateBlock(block.id, { items: [...(block.items ?? []), ''] })}>+ Tambah item</button></div>}
-            {block.type === 'affiliate' && <div className="block-affiliate-editor"><input type="search" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Cari produk affiliate..." />
-              {products.length === 0 ? <p>Belum ada produk. Tambahkan melalui menu Link Affiliate.</p> : <div className="block-product-options">{filteredProducts.map((p) => <label key={p.id} className="block-product-option"><input type="checkbox" checked={(block.productIds ?? []).includes(p.id)} onChange={() => updateBlock(block.id, { productIds: (block.productIds ?? []).includes(p.id) ? block.productIds!.filter((id) => id !== p.id) : [...(block.productIds ?? []), p.id] })} />{p.image_url ? <img src={p.image_url} alt="" /> : <span className="block-product-placeholder">↗</span>}<span><strong>{p.name}</strong><small>{p.price != null ? `${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : 'Harga tidak diisi'}</small></span></label>)}</div>}
+            {block.type === 'affiliate' && <div className="block-affiliate-editor">
+              {products.length === 0 ? <p>Belum ada produk. Tambahkan melalui menu Link Affiliate.</p> : <>
+                <label className="affiliate-product-select-label">Pilih produk affiliate
+                  <select className="affiliate-product-select" value={(block.productIds ?? [])[0] ?? ''} onChange={(e) => updateBlock(block.id, { productIds: e.target.value ? [e.target.value] : [] })}>
+                    <option value="">-- Pilih produk --</option>
+                    {products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.price != null ? ` — ${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : ''}</option>)}
+                  </select>
+                </label>
+                <small>Pilih satu produk dari daftar. Untuk menampilkan produk lain, tambahkan blok Produk Affiliate baru.</small>
+              </>}
             </div>}
             {block.type === 'image' && <div className="article-block-fields">
               <label className="article-upload-button"> {uploadingBlockId === block.id ? 'Mengunggah gambar...' : 'Pilih gambar dari komputer'}
