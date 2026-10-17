@@ -159,9 +159,9 @@ func aiCoverHandler(w http.ResponseWriter, r *http.Request) {
 	if provider == "fal-ai" {
 		switch model {
 		case "black-forest-labs/FLUX.1-schnell":
-			providerModel = "flux/schnell"
+			providerModel = "fal-ai/flux/schnell"
 		case "black-forest-labs/FLUX.1-dev":
-			providerModel = "flux/dev"
+			providerModel = "fal-ai/flux/dev"
 		default:
 			writeJSON(w, http.StatusBadRequest, APIResponse{Status: "error", Error: "Model ini belum dipetakan untuk provider fal-ai. Gunakan black-forest-labs/FLUX.1-schnell atau FLUX.1-dev."})
 			return
