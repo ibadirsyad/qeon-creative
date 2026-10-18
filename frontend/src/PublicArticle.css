@@ -637,17 +637,54 @@
 .public-article-figure-large { width: 75%; max-width: 100%; }
 .public-article-figure-full { width: 100%; max-width: 100%; }
 
-/* Ukuran dan posisi card produk affiliate per blok artikel */
-.public-product-grid{display:flex;flex-wrap:wrap;align-items:stretch;justify-content:flex-start}
-.public-product-grid-align-left{justify-content:flex-start}
-.public-product-grid-align-center{justify-content:center}
-.public-product-grid-align-right{justify-content:flex-end}
-.public-product-grid .public-product-card{box-sizing:border-box;min-width:0;max-width:100%;flex:0 0 auto;width:calc(25% - 14px)}
-.public-product-grid-size-small .public-product-card{width:calc(25% - 14px)}
-.public-product-grid-size-medium .public-product-card{width:calc(50% - 9px)}
-.public-product-grid-size-large .public-product-card{width:calc(75% - 5px)}
-.public-product-grid-size-full .public-product-card{width:100%}
-@media(max-width:760px){.public-product-grid-size-small .public-product-card{width:calc(50% - 9px)}.public-product-grid-size-medium .public-product-card,.public-product-grid-size-large .public-product-card{width:100%}}
+/* Tata letak card affiliate yang konsisten di desktop dan ponsel. */
+.public-product-grid {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  align-items: stretch;
+  gap: 16px;
+  margin: 28px 0;
+}
+.public-product-grid-align-left { justify-content: start; }
+.public-product-grid-align-center { justify-content: center; }
+.public-product-grid-align-right { justify-content: end; }
+.public-product-grid-size-small { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
+.public-product-grid-size-medium { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.public-product-grid-size-large { grid-template-columns: minmax(0, 3fr); }
+.public-product-grid-size-full { grid-template-columns: minmax(0, 1fr); }
+.public-product-grid .public-product-card { width: auto; min-width: 0; max-width: 100%; }
+.public-product-empty {
+  margin: 24px 0;
+  padding: 14px 16px;
+  border: 1px dashed #d7b779;
+  border-radius: 12px;
+  background: #fffaf0;
+  color: #78591c;
+  font-size: .9rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 680px) {
+  .public-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 22px 0; }
+  .public-product-grid-size-medium,
+  .public-product-grid-size-large,
+  .public-product-grid-size-full { grid-template-columns: minmax(0, 1fr); }
+  .public-product-grid .public-product-card { width: 100%; }
+  .public-product-card > img,
+  .public-product-placeholder { height: 145px; padding: 9px; }
+  .public-product-info { padding: 12px; }
+  .public-product-info h3 { min-height: 0; font-size: .88rem; overflow-wrap: anywhere; }
+  .public-product-price { font-size: .92rem; overflow-wrap: anywhere; }
+  .public-product-link { width: 100%; min-height: 42px; padding: 10px 8px; font-size: .82rem; }
+}
+@media (max-width: 360px) {
+  .public-product-grid,
+  .public-product-grid-size-small { grid-template-columns: minmax(0, 1fr); }
+  .public-product-card > img,
+  .public-product-placeholder { height: 190px; }
+}
 
 /* Alignment gambar artikel publik mengikuti pilihan pada editor */
 .public-article-figure-align-left{margin-left:0;margin-right:auto}
@@ -666,4 +703,53 @@
   font-weight: 600;
 }
 
-.public-article-kicker{display:inline-flex;padding:5px 10px;border-radius:999px;background:#eeeaff;color:#5d4bc5;font-size:.78rem;font-weight:750;letter-spacing:.02em}
+
+/* Branding dinamis dan post carousel, diselaraskan dengan footer beranda */
+.public-brand { gap: 12px; min-width: 0; }
+.public-brand::before { content: none; display: none; }
+.public-brand-logo { width: 42px; height: 42px; flex: 0 0 42px; object-fit: contain; border-radius: 10px; }
+.public-brand-mark { width: 42px; height: 42px; flex: 0 0 42px; display: grid; place-items: center; border-radius: 10px; color: #fff; background: #176c50; font-size: 22px; font-weight: 850; }
+.public-brand-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.public-brand-copy strong { font-size: 1.05rem; font-weight: 850; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.public-brand-copy small { color: #849087; font-size: .68rem; font-weight: 600; letter-spacing: .025em; }
+.public-related-section { width: min(1180px, 100%); margin: 58px auto 0; padding: clamp(24px, 4vw, 48px); background: #fbfcfa; border: 1px solid #e4eae3; border-radius: 22px; }
+.public-related-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 26px; }
+.public-related-kicker { color: #176c50; font-size: .68rem; font-weight: 800; letter-spacing: .14em; }
+.public-related-heading h2 { margin: 9px 0 0; color: #17251f; font-size: clamp(1.7rem, 3vw, 2.4rem); line-height: 1.1; letter-spacing: -.055em; }
+.public-related-heading h2 em { color: #176c50; font-style: normal; }
+.public-related-heading > a, .public-related-read { color: #176c50; text-decoration: none; font-size: .78rem; font-weight: 800; white-space: nowrap; }
+.public-related-carousel { display: grid; grid-auto-columns: minmax(235px, 1fr); grid-auto-flow: column; gap: 20px; overflow-x: auto; padding: 2px 2px 16px; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: #b9cbbb transparent; }
+.public-related-card { min-width: 0; scroll-snap-align: start; }
+.public-related-image { display: block; height: 165px; overflow: hidden; border-radius: 12px; background: #eaf0e8; }
+.public-related-image img { width: 100%; height: 100%; display: block; object-fit: cover; transition: transform .3s ease; }
+.public-related-card:hover .public-related-image img { transform: scale(1.04); }
+.public-related-placeholder { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #e2eddf; color: #176c50; }
+.public-related-placeholder.tone-1 { background: #e2e8e5; }
+.public-related-placeholder.tone-2 { background: #e6e5d9; }
+.public-related-placeholder span { font-size: 3rem; font-weight: 850; letter-spacing: -.1em; }
+.public-related-placeholder small { font-size: .55rem; letter-spacing: .14em; }
+.public-related-meta { margin-top: 13px; color: #829087; font-size: .68rem; }
+.public-related-card h3 { margin: 8px 0; font-size: 1rem; line-height: 1.4; letter-spacing: -.025em; }
+.public-related-card h3 a { color: #17251f; text-decoration: none; }
+.public-related-card p { margin: 0 0 10px; color: #66746d; font-size: .8rem; line-height: 1.65; }
+.public-related-read { display: inline-flex; gap: 10px; margin-top: 5px; }
+.public-article-footer { width: calc(100% + 48px); margin: 48px -24px -40px; padding: 25px clamp(22px, 6vw, 96px); display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #849087; background: #fff; border-top: 1px solid #e4eae3; font-size: .68rem; }
+.public-article-footer a { color: inherit; text-decoration: none; }
+.public-footer-brand { display: inline-flex; align-items: center; gap: 9px; color: #17251f !important; font-weight: 850; white-space: nowrap; }
+.public-footer-brand img, .public-footer-brand > span { width: 30px; height: 30px; object-fit: contain; border-radius: 7px; }
+.public-footer-brand > span { display: grid; place-items: center; background: #176c50; color: white; }
+.public-article-footer > span { line-height: 1.6; }
+@media (max-width: 680px) {
+  .public-article-shell { padding-left: 14px; padding-right: 14px; padding-bottom: 0; }
+  .public-article-header { min-height: 72px; gap: 12px; }
+  .public-brand-logo, .public-brand-mark { width: 36px; height: 36px; flex-basis: 36px; }
+  .public-brand-copy strong { font-size: .92rem; }
+  .public-brand-copy small { font-size: .6rem; }
+  .public-back-link { font-size: .75rem; text-align: right; }
+  .public-related-section { margin-top: 28px; padding: 20px 16px; border-radius: 16px; }
+  .public-related-heading { align-items: start; flex-direction: column; gap: 12px; }
+  .public-related-carousel { grid-auto-columns: minmax(78%, 1fr); gap: 14px; }
+  .public-related-image { height: 180px; }
+  .public-article-footer { width: calc(100% + 28px); margin: 30px -14px 0; padding: 22px 18px; flex-wrap: wrap; justify-content: space-between; }
+  .public-article-footer > span { order: 3; width: 100%; }
+}
