@@ -62,7 +62,7 @@ function parseBlocks(content: string): ArticleBlock[] {
   return content ? [{ id: newId(), type: 'text', text: content }] : emptyBlocks();
 }
 
-const ARTICLE_CATEGORIES = ['Rakit PC Gaming', 'Rakit PC Editing', 'Rakit PC Kantor', 'Komponen PC', 'Tips & Tutorial'];
+const ARTICLE_CATEGORIES = ['Panduan Rakit PC', 'Komponen PC', 'Rekomendasi Rakitan', 'Troubleshooting', 'Artikel'];
 
 function blockLabel(type: BlockType) {
   const labels: Record<BlockType, string> = {
@@ -423,7 +423,7 @@ export default function Artikel({ userId }: { userId: string }) {
           </label>
           <label className="article-field article-field-full"><span>Ringkasan</span>
             <textarea rows={2} value={excerpt} onChange={(e) => setExcerpt(e.target.value)} placeholder="Ringkasan artikel..." /></label>
-          <label className="article-field"><span>Kategori artikel *</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{ARTICLE_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select><small>Samakan pilihan ini dengan kategori pada dropdown menu pengunjung.</small></label>
+          <label className="article-field"><span>Kategori artikel *</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{ARTICLE_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select><small>Kategori mengikuti menu Rakit PC pada website pengunjung.</small></label>
           <div className="article-field article-field-full">
             <span>Gambar sampul (opsional)</span>
             <label className="article-upload-button article-cover-upload-button">
