@@ -15,6 +15,7 @@ type ArticleBlock = {
   url?: string;
   caption?: string;
   imageSize?: 'small' | 'medium' | 'large' | 'full';
+  imageAlign?: 'left' | 'center' | 'right';
 };
 
 type Article = {
@@ -28,6 +29,7 @@ type Article = {
   created_at: string;
   updated_at: string;
 };
+
 
 type Product = {
   id: string;
@@ -98,6 +100,7 @@ export default function Artikel({ userId }: { userId: string }) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
+  const [productSearch, setProductSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
@@ -218,6 +221,7 @@ export default function Artikel({ userId }: { userId: string }) {
     setUploadProgressMessage('Gambar berhasil diunggah.');
     setUploadingBlockId(null);
   }
+
 
   async function uploadCoverImage(file?: File) {
     if (!file) return;
@@ -349,6 +353,8 @@ export default function Artikel({ userId }: { userId: string }) {
   const filteredArticles = articles.filter((a) =>
     `${a.title} ${a.slug} ${a.excerpt ?? ''}`.toLowerCase().includes(search.toLowerCase()));
 
+  const filteredProducts = products.filter((p) =>
+    p.name.toLowerCase().includes(productSearch.toLowerCase()));
 
   function renderBlock(block: ArticleBlock) {
     if (block.type === 'divider') return <hr className="block-preview-divider" />;
@@ -356,7 +362,7 @@ export default function Artikel({ userId }: { userId: string }) {
     if (block.type === 'text') return <p className="formatted-paragraph">{(block.text ?? '').split('\n').map((line, i) => <span key={i}>{i > 0 && <br />}<InlineFormattedText text={line} /></span>)}</p>;
     if (block.type === 'quote') return <blockquote><InlineFormattedText text={block.text ?? ''} /></blockquote>;
     if (block.type === 'list') return <ul>{(block.items ?? []).filter(Boolean).map((item, i) => <li key={i}>{item}</li>)}</ul>;
-    if (block.type === 'image') return block.url ? <figure className={`preview-image preview-image-size-${block.imageSize ?? 'full'}`}><img src={block.url} alt={block.caption ?? ''} /><figcaption>{block.caption}</figcaption></figure> : null;
+    if (block.type === 'image') return block.url ? <figure className={`preview-image preview-image-size-${block.imageSize ?? 'full'} preview-image-align-${block.imageAlign ?? 'center'}`}><img src={block.url} alt={block.caption ?? ''} /><figcaption>{block.caption}</figcaption></figure> : null;
     if (block.type === 'tiktok') {
       const embedUrl = block.url ? getTikTokEmbedUrl(block.url) : null;
       return block.url ? <div className="article-tiktok-embed">
@@ -407,6 +413,7 @@ export default function Artikel({ userId }: { userId: string }) {
             <textarea rows={2} value={excerpt} onChange={(e) => setExcerpt(e.target.value)} placeholder="Ringkasan artikel..." /></label>
           <div className="article-field article-field-full">
             <span>Gambar sampul (opsional)</span>
+
             <label className="article-upload-button article-cover-upload-button">
               {uploadingCover ? 'Mengunggah sampul...' : 'Pilih gambar sampul dari komputer'}
               <input
@@ -462,14 +469,15 @@ export default function Artikel({ userId }: { userId: string }) {
             </div>}
             {block.type === 'list' && <div className="block-list-editor">{(block.items ?? ['']).map((item, i) => <div className="block-list-row" key={i}><input value={item} onChange={(e) => updateBlock(block.id, { items: (block.items ?? []).map((v, n) => n === i ? e.target.value : v) })} placeholder={`Item ${i + 1}`} /><button type="button" onClick={() => updateBlock(block.id, { items: (block.items ?? []).filter((_, n) => n !== i) })}>×</button></div>)}<button type="button" className="article-secondary-button" onClick={() => updateBlock(block.id, { items: [...(block.items ?? []), ''] })}>+ Tambah item</button></div>}
             {block.type === 'affiliate' && <div className="block-affiliate-editor">
+              <input type="search" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Cari produk affiliate..." />
               {products.length === 0 ? <p>Belum ada produk. Tambahkan melalui menu Link Affiliate.</p> : <>
-                <label className="affiliate-product-select-label">Pilih produk affiliate
-                  <select className="affiliate-product-select" value={(block.productIds ?? [])[0] ?? ''} onChange={(e) => updateBlock(block.id, { productIds: e.target.value ? [e.target.value] : [] })}>
+                <label className="article-field"><span>Pilih produk affiliate</span>
+                  <select value={(block.productIds ?? [])[0] ?? ''} onChange={(e) => updateBlock(block.id, { productIds: e.target.value ? [e.target.value] : [] })}>
                     <option value="">-- Pilih produk --</option>
-                    {products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.price != null ? ` — ${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : ''}</option>)}
+                    {filteredProducts.map((p) => <option key={p.id} value={p.id}>{p.name}{p.price != null ? ` — ${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : ''}</option>)}
                   </select>
                 </label>
-                <small>Pilih satu produk dari daftar. Untuk menampilkan produk lain, tambahkan blok Produk Affiliate baru.</small>
+                {(block.productIds ?? []).map((id) => products.find((p) => p.id === id)).filter(Boolean).map((p) => <div className="block-product-selected" key={p!.id}>{p!.image_url ? <img src={p!.image_url} alt="" /> : <span className="block-product-placeholder">↗</span>}<span><strong>{p!.name}</strong><small>{p!.price != null ? `${p!.currency ?? 'IDR'} ${Number(p!.price).toLocaleString('id-ID')}` : 'Harga tidak diisi'}</small></span></div>)}
               </>}
             </div>}
             {block.type === 'image' && <div className="article-block-fields">
@@ -487,15 +495,22 @@ export default function Artikel({ userId }: { userId: string }) {
                   <option value="full">Penuh — 100%</option>
                 </select>
               </label>
-              {block.url && <img className={`block-image-preview block-image-preview-${block.imageSize ?? 'full'}`} src={block.url} alt={block.caption ?? ''} />}
+              <label className="article-image-size-field">Posisi gambar
+                <select value={block.imageAlign ?? 'center'} onChange={(e) => updateBlock(block.id, { imageAlign: e.target.value as ArticleBlock['imageAlign'] })}>
+                  <option value="left">Rata kiri</option><option value="center">Tengah</option><option value="right">Rata kanan</option>
+                </select>
+              </label>
+              {block.url && <img className={`block-image-preview block-image-preview-${block.imageSize ?? 'full'} block-image-align-${block.imageAlign ?? 'center'}`} src={block.url} alt={block.caption ?? ''} />}
             </div>}
             {block.type === 'tiktok' && <div className="article-block-fields"><input value={block.url ?? ''} onChange={(e) => updateBlock(block.id, { url: e.target.value })} placeholder="https://www.tiktok.com/@akun/video/..." /><small>Masukkan URL video TikTok publik. Embed akan disiapkan untuk halaman artikel publik.</small></div>}
             {block.type === 'divider' && <p className="block-divider-help">Garis pemisah akan tampil di antara bagian artikel.</p>}
           </div>)}
         </div>
-        <div className="add-block-panel"><strong>Tambah blok</strong><div className="add-block-buttons">
-          {(['heading', 'text', 'list', 'affiliate', 'image', 'tiktok', 'quote', 'divider'] as BlockType[]).map((type) => <button type="button" key={type} className="add-block-button" onClick={() => addBlock(type)}>＋ {blockLabel(type)}</button>)}
-        </div></div>
+        <div className="add-block-panel"><strong>Tambah blok berdasarkan kategori</strong>
+          <div className="add-block-category"><h4>Teks & Konten</h4><div className="add-block-buttons">{(['heading', 'text', 'list', 'quote', 'divider'] as BlockType[]).map((type) => <button type="button" key={type} className="add-block-button" onClick={() => addBlock(type)}>＋ {blockLabel(type)}</button>)}</div></div>
+          <div className="add-block-category"><h4>Media</h4><div className="add-block-buttons">{(['image', 'tiktok'] as BlockType[]).map((type) => <button type="button" key={type} className="add-block-button" onClick={() => addBlock(type)}>＋ {blockLabel(type)}</button>)}</div></div>
+          <div className="add-block-category"><h4>Produk</h4><div className="add-block-buttons"><button type="button" className="add-block-button" onClick={() => addBlock('affiliate')}>＋ {blockLabel('affiliate')}</button></div></div>
+        </div>
       </> : <div className="article-preview">
         <h1>{title || 'Judul Artikel'}</h1>{excerpt && <p className="article-preview-excerpt">{excerpt}</p>}
         {cover && <img className="article-preview-cover" src={cover} alt="" />}
