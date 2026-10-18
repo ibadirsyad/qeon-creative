@@ -15,7 +15,9 @@ type ArticleBlock = {
   url?: string;
   caption?: string;
   imageSize?: 'small' | 'medium' | 'large' | 'full';
-  imageAlign?: 'left' | 'center' | 'right';
+  imageAlignment?: 'left' | 'center' | 'right';
+  productSize?: 'small' | 'medium' | 'large' | 'full';
+  productAlignment?: 'left' | 'center' | 'right';
 };
 
 type Article = {
@@ -23,13 +25,13 @@ type Article = {
   title: string;
   slug: string;
   excerpt: string | null;
+  category: string | null;
   content: string;
   cover_image_url: string | null;
   status: ArticleStatus;
   created_at: string;
   updated_at: string;
 };
-
 
 type Product = {
   id: string;
@@ -59,6 +61,8 @@ function parseBlocks(content: string): ArticleBlock[] {
   }
   return content ? [{ id: newId(), type: 'text', text: content }] : emptyBlocks();
 }
+
+const ARTICLE_CATEGORIES = ['Rakit PC Gaming', 'Rakit PC Editing', 'Rakit PC Kantor', 'Komponen PC', 'Tips & Tutorial'];
 
 function blockLabel(type: BlockType) {
   const labels: Record<BlockType, string> = {
@@ -108,6 +112,7 @@ export default function Artikel({ userId }: { userId: string }) {
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
   const [excerpt, setExcerpt] = useState('');
+  const [category, setCategory] = useState(ARTICLE_CATEGORIES[0]);
   const [cover, setCover] = useState('');
   const [status, setStatus] = useState<ArticleStatus>('draft');
   const [blocks, setBlocks] = useState<ArticleBlock[]>(emptyBlocks);
@@ -125,7 +130,7 @@ export default function Artikel({ userId }: { userId: string }) {
     setError('');
     const [a, p] = await Promise.all([
       supabase.from('articles')
-        .select('id,title,slug,excerpt,content,cover_image_url,status,created_at,updated_at')
+        .select('id,title,slug,excerpt,category,content,cover_image_url,status,created_at,updated_at')
         .eq('user_id', userId).order('updated_at', { ascending: false }),
       supabase.from('affiliate_products')
         .select('id,name,affiliate_url,image_url,price,currency')
@@ -141,7 +146,7 @@ export default function Artikel({ userId }: { userId: string }) {
   useEffect(() => { void loadData(); }, [loadData]);
 
   function resetEditor() {
-    setEditingId(null); setTitle(''); setSlug(''); setExcerpt(''); setCover('');
+    setEditingId(null); setTitle(''); setSlug(''); setExcerpt(''); setCategory(ARTICLE_CATEGORIES[0]); setCover('');
     setStatus('draft'); setBlocks(emptyBlocks()); setPreview(false);
   }
 
@@ -183,7 +188,7 @@ export default function Artikel({ userId }: { userId: string }) {
     setError(''); setNotice('');
     setEditingId(article.id);
     setTitle(article.title); setSlug(article.slug);
-    setExcerpt(article.excerpt ?? ''); setCover(article.cover_image_url ?? '');
+    setExcerpt(article.excerpt ?? ''); setCategory(article.category || ARTICLE_CATEGORIES[0]); setCover(article.cover_image_url ?? '');
     setStatus(article.status); setBlocks(parseBlocks(article.content));
     setPreview(false); setShowEditor(true);
   }
@@ -221,7 +226,6 @@ export default function Artikel({ userId }: { userId: string }) {
     setUploadProgressMessage('Gambar berhasil diunggah.');
     setUploadingBlockId(null);
   }
-
 
   async function uploadCoverImage(file?: File) {
     if (!file) return;
@@ -297,6 +301,7 @@ export default function Artikel({ userId }: { userId: string }) {
       title: cleanTitle,
       slug: cleanSlug,
       excerpt: excerpt.trim() || null,
+      category,
       content: JSON.stringify(blocks),
       cover_image_url: cover.trim() || null,
       status: nextStatus,
@@ -342,6 +347,13 @@ export default function Artikel({ userId }: { userId: string }) {
     setShowEditor(false); resetEditor(); await loadData();
   }
 
+  function previewArticle(article?: Article) {
+    const previewArticleData = article ?? { id: editingId ?? 'preview', title, slug: slugify(slug || title || 'pratinjau-artikel'), excerpt: excerpt.trim() || null, category, content: JSON.stringify(blocks), cover_image_url: cover.trim() || null, status, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(`affilicms_article_preview_${token}`, JSON.stringify({ article: previewArticleData }));
+    window.open(`/artikel/${previewArticleData.slug}?preview=${token}`, '_blank', 'noopener,noreferrer');
+  }
+
   async function deleteArticle(article: Article) {
     if (!window.confirm(`Hapus artikel "${article.title}"? Tindakan ini tidak dapat dibatalkan.`)) return;
     const { error: deleteError } = await supabase.from('articles').delete()
@@ -362,7 +374,7 @@ export default function Artikel({ userId }: { userId: string }) {
     if (block.type === 'text') return <p className="formatted-paragraph">{(block.text ?? '').split('\n').map((line, i) => <span key={i}>{i > 0 && <br />}<InlineFormattedText text={line} /></span>)}</p>;
     if (block.type === 'quote') return <blockquote><InlineFormattedText text={block.text ?? ''} /></blockquote>;
     if (block.type === 'list') return <ul>{(block.items ?? []).filter(Boolean).map((item, i) => <li key={i}>{item}</li>)}</ul>;
-    if (block.type === 'image') return block.url ? <figure className={`preview-image preview-image-size-${block.imageSize ?? 'full'} preview-image-align-${block.imageAlign ?? 'center'}`}><img src={block.url} alt={block.caption ?? ''} /><figcaption>{block.caption}</figcaption></figure> : null;
+    if (block.type === 'image') return block.url ? <figure className={`preview-image preview-image-size-${block.imageSize ?? 'full'} preview-image-align-${block.imageAlignment ?? 'center'}`}><img src={block.url} alt={block.caption ?? ''} /><figcaption>{block.caption}</figcaption></figure> : null;
     if (block.type === 'tiktok') {
       const embedUrl = block.url ? getTikTokEmbedUrl(block.url) : null;
       return block.url ? <div className="article-tiktok-embed">
@@ -373,7 +385,7 @@ export default function Artikel({ userId }: { userId: string }) {
     }
     if (block.type === 'affiliate') {
       const selected = products.filter((p) => (block.productIds ?? []).includes(p.id));
-      return <div className="article-preview-products">{selected.map((p) => <div className="article-preview-product" key={p.id}>
+      return <div className={`article-preview-products article-preview-products-size-${block.productSize ?? 'full'} article-preview-products-align-${block.productAlignment ?? 'left'}`}>{selected.map((p) => <div className="article-preview-product" key={p.id}>
         {p.image_url && <img src={p.image_url} alt="" />}
         <div><strong>{p.name}</strong>{p.price != null && <p>{p.currency ?? 'IDR'} {Number(p.price).toLocaleString('id-ID')}</p>}
         <a href={p.affiliate_url} target="_blank" rel="noreferrer">Lihat Produk</a></div>
@@ -411,9 +423,9 @@ export default function Artikel({ userId }: { userId: string }) {
           </label>
           <label className="article-field article-field-full"><span>Ringkasan</span>
             <textarea rows={2} value={excerpt} onChange={(e) => setExcerpt(e.target.value)} placeholder="Ringkasan artikel..." /></label>
+          <label className="article-field"><span>Kategori artikel *</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{ARTICLE_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select><small>Samakan pilihan ini dengan kategori pada dropdown menu pengunjung.</small></label>
           <div className="article-field article-field-full">
             <span>Gambar sampul (opsional)</span>
-
             <label className="article-upload-button article-cover-upload-button">
               {uploadingCover ? 'Mengunggah sampul...' : 'Pilih gambar sampul dari komputer'}
               <input
@@ -468,17 +480,8 @@ export default function Artikel({ userId }: { userId: string }) {
               <textarea ref={(node) => { textareas.current[block.id] = node; }} rows={block.type === 'text' ? 4 : 3} value={block.text ?? ''} onChange={(e) => updateBlock(block.id, { text: e.target.value })} placeholder={block.type === 'text' ? 'Tulis paragraf...' : 'Tulis kutipan...'} />
             </div>}
             {block.type === 'list' && <div className="block-list-editor">{(block.items ?? ['']).map((item, i) => <div className="block-list-row" key={i}><input value={item} onChange={(e) => updateBlock(block.id, { items: (block.items ?? []).map((v, n) => n === i ? e.target.value : v) })} placeholder={`Item ${i + 1}`} /><button type="button" onClick={() => updateBlock(block.id, { items: (block.items ?? []).filter((_, n) => n !== i) })}>×</button></div>)}<button type="button" className="article-secondary-button" onClick={() => updateBlock(block.id, { items: [...(block.items ?? []), ''] })}>+ Tambah item</button></div>}
-            {block.type === 'affiliate' && <div className="block-affiliate-editor">
-              <input type="search" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Cari produk affiliate..." />
-              {products.length === 0 ? <p>Belum ada produk. Tambahkan melalui menu Link Affiliate.</p> : <>
-                <label className="article-field"><span>Pilih produk affiliate</span>
-                  <select value={(block.productIds ?? [])[0] ?? ''} onChange={(e) => updateBlock(block.id, { productIds: e.target.value ? [e.target.value] : [] })}>
-                    <option value="">-- Pilih produk --</option>
-                    {filteredProducts.map((p) => <option key={p.id} value={p.id}>{p.name}{p.price != null ? ` — ${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : ''}</option>)}
-                  </select>
-                </label>
-                {(block.productIds ?? []).map((id) => products.find((p) => p.id === id)).filter(Boolean).map((p) => <div className="block-product-selected" key={p!.id}>{p!.image_url ? <img src={p!.image_url} alt="" /> : <span className="block-product-placeholder">↗</span>}<span><strong>{p!.name}</strong><small>{p!.price != null ? `${p!.currency ?? 'IDR'} ${Number(p!.price).toLocaleString('id-ID')}` : 'Harga tidak diisi'}</small></span></div>)}
-              </>}
+            {block.type === 'affiliate' && <div className="block-affiliate-editor"><input type="search" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Cari produk affiliate..." />
+              {products.length === 0 ? <p>Belum ada produk. Tambahkan melalui menu Link Affiliate.</p> : <><label className="article-field"><span>Pilih produk (bisa lebih dari satu)</span><select value="" onChange={(e) => { const id = e.target.value; if (id && !(block.productIds ?? []).includes(id)) updateBlock(block.id, { productIds: [...(block.productIds ?? []), id] }); }}><option value="">Pilih produk dari daftar...</option>{filteredProducts.filter((p) => !(block.productIds ?? []).includes(p.id)).map((p) => <option key={p.id} value={p.id}>{p.name}{p.price != null ? ` — ${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : ''}</option>)}</select></label><div className="selected-products-list">{(block.productIds ?? []).map((id) => { const p = products.find((item) => item.id === id); if (!p) return null; return <div className="selected-product-row" key={id}>{p.image_url ? <img src={p.image_url} alt="" /> : <span className="block-product-placeholder">↗</span>}<span><strong>{p.name}</strong><small>{p.price != null ? `${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : 'Harga tidak diisi'}</small></span><button type="button" className="article-delete-button" onClick={() => updateBlock(block.id, { productIds: (block.productIds ?? []).filter((pid) => pid !== id) })}>Hapus</button></div>; })}</div><div className="article-product-layout-settings"><label className="article-field"><span>Ukuran blok produk</span><select value={block.productSize ?? 'full'} onChange={(e) => updateBlock(block.id, { productSize: e.target.value as ArticleBlock['productSize'] })}><option value="small">Kecil — 25%</option><option value="medium">Sedang — 50%</option><option value="large">Besar — 75%</option><option value="full">Penuh — 100%</option></select></label><label className="article-field"><span>Alignment blok produk</span><select value={block.productAlignment ?? 'left'} onChange={(e) => updateBlock(block.id, { productAlignment: e.target.value as ArticleBlock['productAlignment'] })}><option value="left">Rata kiri</option><option value="center">Tengah</option><option value="right">Rata kanan</option></select></label></div></>}
             </div>}
             {block.type === 'image' && <div className="article-block-fields">
               <label className="article-upload-button"> {uploadingBlockId === block.id ? 'Mengunggah gambar...' : 'Pilih gambar dari komputer'}
@@ -495,24 +498,18 @@ export default function Artikel({ userId }: { userId: string }) {
                   <option value="full">Penuh — 100%</option>
                 </select>
               </label>
-              <label className="article-image-size-field">Posisi gambar
-                <select value={block.imageAlign ?? 'center'} onChange={(e) => updateBlock(block.id, { imageAlign: e.target.value as ArticleBlock['imageAlign'] })}>
-                  <option value="left">Rata kiri</option><option value="center">Tengah</option><option value="right">Rata kanan</option>
-                </select>
-              </label>
-              {block.url && <img className={`block-image-preview block-image-preview-${block.imageSize ?? 'full'} block-image-align-${block.imageAlign ?? 'center'}`} src={block.url} alt={block.caption ?? ''} />}
+              <label className="article-image-size-field">Posisi gambar<select value={block.imageAlignment ?? 'center'} onChange={(e) => updateBlock(block.id, { imageAlignment: e.target.value as ArticleBlock['imageAlignment'] })}><option value="left">Rata kiri</option><option value="center">Tengah</option><option value="right">Rata kanan</option></select></label>
+              {block.url && <img className={`block-image-preview block-image-preview-${block.imageSize ?? 'full'} block-image-preview-align-${block.imageAlignment ?? 'center'}`} src={block.url} alt={block.caption ?? ''} />}
             </div>}
             {block.type === 'tiktok' && <div className="article-block-fields"><input value={block.url ?? ''} onChange={(e) => updateBlock(block.id, { url: e.target.value })} placeholder="https://www.tiktok.com/@akun/video/..." /><small>Masukkan URL video TikTok publik. Embed akan disiapkan untuk halaman artikel publik.</small></div>}
             {block.type === 'divider' && <p className="block-divider-help">Garis pemisah akan tampil di antara bagian artikel.</p>}
           </div>)}
         </div>
-        <div className="add-block-panel"><strong>Tambah blok berdasarkan kategori</strong>
-          <div className="add-block-category"><h4>Teks & Konten</h4><div className="add-block-buttons">{(['heading', 'text', 'list', 'quote', 'divider'] as BlockType[]).map((type) => <button type="button" key={type} className="add-block-button" onClick={() => addBlock(type)}>＋ {blockLabel(type)}</button>)}</div></div>
-          <div className="add-block-category"><h4>Media</h4><div className="add-block-buttons">{(['image', 'tiktok'] as BlockType[]).map((type) => <button type="button" key={type} className="add-block-button" onClick={() => addBlock(type)}>＋ {blockLabel(type)}</button>)}</div></div>
-          <div className="add-block-category"><h4>Produk</h4><div className="add-block-buttons"><button type="button" className="add-block-button" onClick={() => addBlock('affiliate')}>＋ {blockLabel('affiliate')}</button></div></div>
-        </div>
+        <div className="add-block-panel"><strong>Tambah blok</strong><div className="add-block-buttons">
+          {(['heading', 'text', 'list', 'affiliate', 'image', 'tiktok', 'quote', 'divider'] as BlockType[]).map((type) => <button type="button" key={type} className="add-block-button" onClick={() => addBlock(type)}>＋ {blockLabel(type)}</button>)}
+        </div></div>
       </> : <div className="article-preview">
-        <h1>{title || 'Judul Artikel'}</h1>{excerpt && <p className="article-preview-excerpt">{excerpt}</p>}
+        <span className="article-category-tag">{category}</span><h1>{title || 'Judul Artikel'}</h1>{excerpt && <p className="article-preview-excerpt">{excerpt}</p>}
         {cover && <img className="article-preview-cover" src={cover} alt="" />}
         {blocks.map((block) => <div className={`preview-block preview-${block.type}`} key={block.id}>{renderBlock(block)}</div>)}
       </div>}
@@ -529,8 +526,8 @@ export default function Artikel({ userId }: { userId: string }) {
         <div className="article-list">{filteredArticles.map((a) => <article className="article-list-item" key={a.id}>
           {a.cover_image_url ? <img className="article-list-cover" src={a.cover_image_url} alt="" /> : <div className="article-list-cover article-list-cover-placeholder">▤</div>}
           <div className="article-list-main"><div className="article-list-title-row"><h3>{a.title}</h3><span className={`article-status article-status-${a.status}`}>{a.status === 'published' ? 'Terbit' : 'Draft'}</span></div>
-            <p>{a.excerpt || parseBlocks(a.content).map((b) => b.text ?? '').join(' ').slice(0, 150)}</p><div className="article-list-meta"><span>/{a.slug}</span><span>Diperbarui {new Date(a.updated_at).toLocaleDateString('id-ID')}</span></div></div>
-          <div className="article-list-actions"><button type="button" className="article-secondary-button" onClick={() => void openEdit(a)}>Edit</button><button type="button" className="article-delete-button" onClick={() => void deleteArticle(a)}>Hapus</button></div>
+            <p>{a.excerpt || parseBlocks(a.content).map((b) => b.text ?? '').join(' ').slice(0, 150)}</p><div className="article-list-meta"><span className="article-category-tag">{a.category || 'Tanpa kategori'}</span><span>/{a.slug}</span><span>Diperbarui {new Date(a.updated_at).toLocaleDateString('id-ID')}</span></div></div>
+          <div className="article-list-actions"><button type="button" className="article-secondary-button" onClick={() => previewArticle(a)}>Pratinjau</button><button type="button" className="article-secondary-button" onClick={() => void openEdit(a)}>Edit</button><button type="button" className="article-delete-button" onClick={() => void deleteArticle(a)}>Hapus</button></div>
         </article>)}</div>}
     </section>
   </section>;

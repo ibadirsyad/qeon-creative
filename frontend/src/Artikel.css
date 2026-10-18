@@ -51,9 +51,21 @@
 .preview-image-size-large{width:75%;max-width:100%}
 .preview-image-size-full{width:100%;max-width:100%}
 .preview-image figcaption{text-align:center;color:#707589;font-size:.85rem}
+@media(max-width:560px){}
 
-/* Editor: kategori blok, dropdown produk, dan alignment gambar */
-.add-block-category{margin-top:14px}.add-block-category h4{margin:0 0 8px;font-size:.85rem;color:var(--text-muted,#73788c)}
-.block-product-selected{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #e5e2f3;border-radius:10px;background:#faf9ff}.block-product-selected img,.block-product-selected .block-product-placeholder{width:52px;height:52px;object-fit:cover;border-radius:8px;flex:0 0 auto}.block-product-selected>span:last-child{display:flex;flex-direction:column;gap:4px;min-width:0}.block-product-selected strong{font-size:.88rem}.block-product-selected small{font-size:.78rem;color:var(--text-muted,#73788c)}
-.block-image-align-left{align-self:flex-start;margin-left:0;margin-right:auto}.block-image-align-center{align-self:center;margin-left:auto;margin-right:auto}.block-image-align-right{align-self:flex-end;margin-left:auto;margin-right:0}
-.preview-image-align-left img{margin-left:0;margin-right:auto}.preview-image-align-center img{margin-left:auto;margin-right:auto}.preview-image-align-right img{margin-left:auto;margin-right:0}
+/* Revisi kategori, pratinjau, dan kontrol produk affiliate */
+.article-category-tag{display:inline-flex;align-items:center;width:max-content;max-width:100%;padding:4px 9px;border-radius:999px;background:#f0edff;color:#5d4bc5;font-size:.75rem;font-weight:700}
+.article-list-actions{flex-wrap:wrap}
+.article-product-layout-settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.selected-products-list{display:flex;flex-direction:column;gap:8px}
+.selected-product-row{display:flex;align-items:center;gap:10px;padding:9px;border:1px solid var(--border-color,#e1e4ed);border-radius:10px;background:#fbfaff}
+.selected-product-row img,.selected-product-row .block-product-placeholder{width:42px;height:42px;object-fit:cover;border-radius:7px;flex:0 0 auto}
+.selected-product-row>span:nth-child(2){display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}
+.selected-product-row strong{font-size:.84rem;overflow-wrap:anywhere}.selected-product-row small{font-size:.76rem;color:var(--text-muted,#73788c)}
+.preview-image-align-left img,.block-image-preview-align-left{margin-left:0!important;margin-right:auto!important}
+.preview-image-align-center img,.block-image-preview-align-center{margin-left:auto!important;margin-right:auto!important}
+.preview-image-align-right img,.block-image-preview-align-right{margin-left:auto!important;margin-right:0!important}
+.article-preview-products{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:12px}
+.article-preview-products-align-left{justify-content:flex-start}.article-preview-products-align-center{justify-content:center}.article-preview-products-align-right{justify-content:flex-end}
+.article-preview-products-size-small .article-preview-product{width:calc(25% - 12px)}.article-preview-products-size-medium .article-preview-product{width:calc(50% - 8px)}.article-preview-products-size-large .article-preview-product{width:calc(75% - 4px)}.article-preview-products-size-full .article-preview-product{width:100%}
+@media(max-width:760px){.article-product-layout-settings{grid-template-columns:1fr}.article-preview-products-size-small .article-preview-product,.article-preview-products-size-medium .article-preview-product,.article-preview-products-size-large .article-preview-product{width:100%}}
