@@ -678,25 +678,11 @@ export default function AffiliateProducts({
                             <article className="affiliate-product" key={product.id}>
                                 <div className="affiliate-product-image">
                                     {product.image_url ? (
-                                        <>
-                                            <img
-                                                src={product.image_url}
-                                                alt={product.name}
-                                                loading="lazy"
-                                                onError={(event) => {
-                                                    event.currentTarget.style.display = 'none';
-                                                    const fallback = event.currentTarget
-                                                        .nextElementSibling as HTMLElement | null;
-
-                                                    if (fallback) {
-                                                        fallback.style.display = 'inline';
-                                                    }
-                                                }}
-                                            />
-                                            <span style={{ display: 'none' }}>
-                                                Gambar tidak dapat dimuat
-                                            </span>
-                                        </>
+                                        <img
+                                            src={product.image_url}
+                                            alt={product.name}
+                                            loading="lazy"
+                                        />
                                     ) : (
                                         <span>Foto produk</span>
                                     )}
