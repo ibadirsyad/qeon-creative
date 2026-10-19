@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import AuthPage from './AuthPage';
 import AffiliateProducts from './AffiliateProducts';
+import ShopeeAffiliateProducts from './ShopeeAffiliateProducts';
 import Artikel from './Artikel';
 import PublicArticle from './PublicArticle';
 import QeonCompanyLanding from './QeonCompanyLanding';
@@ -41,7 +42,8 @@ type RecentProduct = {
 
 const menuItems = [
   { icon: '⌂', label: 'Dashboard' },
-  { icon: '↗', label: 'Link Affiliate' },
+  { icon: '↗', label: 'Link Affiliate Tiktok' },
+  { icon: '🛍', label: 'Link Affiliate Shopee' },
   { icon: '▤', label: 'Artikel' },
   { icon: '▷', label: 'Video Saya' },
   { icon: '▧', label: 'Media Library' },
@@ -299,7 +301,7 @@ function App() {
     };
   }, [session?.user.id, activePage]);
 
-  
+
   // Sinkronisasi judul tab dan favicon dari pengaturan website
   useEffect(() => {
     let active = true;
@@ -462,8 +464,10 @@ function App() {
             </section>
           ) : activePage === 'Pengaturan Website' ? (
             <WebsiteSettings />
-          ) : activePage === 'Link Affiliate' ? (
+          ) : activePage === 'Link Affiliate Tiktok' ? (
             <AffiliateProducts userId={session.user.id} />
+          ) : activePage === 'Link Affiliate Shopee' ? (
+            <ShopeeAffiliateProducts userId={session.user.id} />
           ) : activePage === 'Artikel' ? (
             <Artikel userId={session.user.id} />
           ) : activePage === 'Dashboard' ? (
