@@ -44,6 +44,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler)
 	mux.HandleFunc("/api/affiliate/preview-image", previewImageHandler)
+	mux.HandleFunc("/api/shopee/preview-image", shopeePreviewImageHandler)
 
 	server := &http.Server{
 		Addr:              serverAddress,
