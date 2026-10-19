@@ -97,11 +97,10 @@ func shopeePreviewImageHandler(w http.ResponseWriter, r *http.Request) {
         writeJSON(w, http.StatusOK, APIResponse{Status: "ok", Message: "Gambar ditemukan dari CDN gambar Shopee", ImageURL: imageURL})
         return
     }
-    // Fallback ke parser metadata HTML/JSON yang sudah ada di main.go.
-    if imageURL, err := extractImageURL(body, finalURL); err == nil && strings.TrimSpace(imageURL) != "" {
-        writeJSON(w, http.StatusOK, APIResponse{Status: "ok", Message: "Gambar ditemukan dari metadata halaman Shopee", ImageURL: imageURL})
-        return
-    }
+    // Jangan memakai fallback parser generik di main.go pada endpoint Shopee.
+    // Parser generik dapat memilih URL aset halaman (misalnya file CSS bundle)
+    // seolah-olah itu gambar. Endpoint ini hanya boleh mengembalikan URL gambar
+    // CDN Shopee yang valid dan berada di path /file/.
     log.Printf("[shopee-preview] URL gambar CDN tidak ditemukan; host=%s content_type=%q bytes=%d", finalURL.Hostname(), contentType, len(body))
     writeJSON(w, http.StatusUnprocessableEntity, APIResponse{Status: "error", Error: "URL gambar CDN Shopee tidak ditemukan pada halaman ini. Coba link produk lengkap atau unggah gambar secara manual."})
 }
@@ -115,7 +114,11 @@ var shopeeImageURLPattern = regexp.MustCompile(`https?://[^"'\\s<>]+`)
 
 func extractShopeeCDNImage(body []byte) string {
     // HTML/JSON sering meng-escape slash dan ampersand.
-    raw := strings.NewReplacer(`\\u002F`, "/", `\\u002f`, "/", `\\/`, "/", `\\u0026`, "&", `&amp;`, "&").Replace(string(body))
+    raw := strings.NewReplacer(
+        `\u002F`, "/", `\u002f`, "/", `\/`, "/",
+        `\u003A`, ":", `\u003a`, ":", `\u0026`, "&",
+        `&amp;`, "&", `\u003D`, "=", `\u003d`, "=",
+    ).Replace(string(body))
     candidates := shopeeImageURLPattern.FindAllString(raw, -1)
     for _, candidate := range candidates {
         candidate = strings.TrimRight(candidate, `),;]}`)
