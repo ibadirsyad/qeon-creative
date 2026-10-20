@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase';
 import './Artikel.css';
 
 type ArticleStatus = 'draft' | 'published';
-type BlockType = 'heading' | 'text' | 'list' | 'affiliate' | 'image' | 'tiktok' | 'quote' | 'divider';
+type BlockType = 'heading' | 'text' | 'list' | 'affiliate' | 'shopeeAffiliate' | 'image' | 'tiktok' | 'quote' | 'divider';
 
 type ArticleBlock = {
   id: string;
@@ -66,7 +66,7 @@ const ARTICLE_CATEGORIES = ['Panduan Rakit PC', 'Komponen PC', 'Rekomendasi Raki
 
 function blockLabel(type: BlockType) {
   const labels: Record<BlockType, string> = {
-    heading: 'Heading', text: 'Teks', list: 'List', affiliate: 'Produk Affiliate',
+    heading: 'Heading', text: 'Teks', list: 'List', affiliate: 'Produk Affiliate', shopeeAffiliate: 'Produk Affiliate Shopee',
     image: 'Gambar', tiktok: 'Video TikTok', quote: 'Kutipan', divider: 'Pemisah',
   };
   return labels[type];
@@ -103,6 +103,7 @@ function InlineFormattedText({ text }: { text: string }) {
 export default function Artikel({ userId }: { userId: string }) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [shopeeProducts, setShopeeProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -128,11 +129,14 @@ export default function Artikel({ userId }: { userId: string }) {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError('');
-    const [a, p] = await Promise.all([
+    const [a, p, sp] = await Promise.all([
       supabase.from('articles')
         .select('id,title,slug,excerpt,category,content,cover_image_url,status,created_at,updated_at')
         .eq('user_id', userId).order('updated_at', { ascending: false }),
       supabase.from('affiliate_products')
+        .select('id,name,affiliate_url,image_url,price,currency')
+        .eq('user_id', userId).order('created_at', { ascending: false }),
+      supabase.from('shopee_affiliate_products')
         .select('id,name,affiliate_url,image_url,price,currency')
         .eq('user_id', userId).order('created_at', { ascending: false }),
     ]);
@@ -140,6 +144,8 @@ export default function Artikel({ userId }: { userId: string }) {
     setArticles((a.data ?? []) as Article[]);
     if (p.error) setError((current) => current ? `${current} | Produk: ${p.error.message}` : `Gagal memuat produk: ${p.error.message}`);
     setProducts((p.data ?? []) as Product[]);
+    if (sp.error) setError((current) => current ? `${current} | Produk Shopee: ${sp.error.message}` : `Gagal memuat produk Shopee: ${sp.error.message}`);
+    setShopeeProducts((sp.data ?? []) as Product[]);
     setLoading(false);
   }, [userId]);
 
@@ -162,7 +168,7 @@ export default function Artikel({ userId }: { userId: string }) {
     const block: ArticleBlock = { id: newId(), type };
     if (type === 'text' || type === 'heading' || type === 'quote') block.text = '';
     if (type === 'list') block.items = [''];
-    if (type === 'affiliate') block.productIds = [];
+    if (type === 'affiliate' || type === 'shopeeAffiliate') block.productIds = [];
     if (type === 'image' || type === 'tiktok') block.url = '';
     setBlocks((current) => [...current, block]);
   }
@@ -391,6 +397,14 @@ export default function Artikel({ userId }: { userId: string }) {
         <a href={p.affiliate_url} target="_blank" rel="noreferrer">Lihat Produk</a></div>
       </div>)}</div>;
     }
+    if (block.type === 'shopeeAffiliate') {
+      const selected = shopeeProducts.filter((p) => (block.productIds ?? []).includes(p.id));
+      return <div className={`article-preview-products article-preview-products-size-${block.productSize ?? 'full'} article-preview-products-align-${block.productAlignment ?? 'left'}`}>{selected.map((p) => <div className="article-preview-product" key={p.id}>
+        {p.image_url && <img src={p.image_url} alt={p.name} />}
+        <div><strong>{p.name}</strong>{p.price != null && <p>{p.currency ?? 'IDR'} {Number(p.price).toLocaleString('id-ID')}</p>}
+        <a href={p.affiliate_url} target="_blank" rel="sponsored noreferrer">Lihat di Shopee ↗</a></div>
+      </div>)}</div>;
+    }
     return null;
   }
 
@@ -483,6 +497,19 @@ export default function Artikel({ userId }: { userId: string }) {
             {block.type === 'affiliate' && <div className="block-affiliate-editor"><input type="search" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Cari produk affiliate..." />
               {products.length === 0 ? <p>Belum ada produk. Tambahkan melalui menu Link Affiliate.</p> : <><label className="article-field"><span>Pilih produk (bisa lebih dari satu)</span><select value="" onChange={(e) => { const id = e.target.value; if (id && !(block.productIds ?? []).includes(id)) updateBlock(block.id, { productIds: [...(block.productIds ?? []), id] }); }}><option value="">Pilih produk dari daftar...</option>{filteredProducts.filter((p) => !(block.productIds ?? []).includes(p.id)).map((p) => <option key={p.id} value={p.id}>{p.name}{p.price != null ? ` — ${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : ''}</option>)}</select></label><div className="selected-products-list">{(block.productIds ?? []).map((id) => { const p = products.find((item) => item.id === id); if (!p) return null; return <div className="selected-product-row" key={id}>{p.image_url ? <img src={p.image_url} alt="" /> : <span className="block-product-placeholder">↗</span>}<span><strong>{p.name}</strong><small>{p.price != null ? `${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : 'Harga tidak diisi'}</small></span><button type="button" className="article-delete-button" onClick={() => updateBlock(block.id, { productIds: (block.productIds ?? []).filter((pid) => pid !== id) })}>Hapus</button></div>; })}</div><div className="article-product-layout-settings"><label className="article-field"><span>Ukuran blok produk</span><select value={block.productSize ?? 'full'} onChange={(e) => updateBlock(block.id, { productSize: e.target.value as ArticleBlock['productSize'] })}><option value="small">Kecil — 25%</option><option value="medium">Sedang — 50%</option><option value="large">Besar — 75%</option><option value="full">Penuh — 100%</option></select></label><label className="article-field"><span>Alignment blok produk</span><select value={block.productAlignment ?? 'left'} onChange={(e) => updateBlock(block.id, { productAlignment: e.target.value as ArticleBlock['productAlignment'] })}><option value="left">Rata kiri</option><option value="center">Tengah</option><option value="right">Rata kanan</option></select></label></div></>}
             </div>}
+            {block.type === 'shopeeAffiliate' && <div className="block-affiliate-editor">
+              <input type="search" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} placeholder="Cari produk Shopee..." />
+              {shopeeProducts.length === 0 ? <p>Belum ada produk Shopee. Tambahkan produk melalui menu Link Affiliate Shopee.</p> : <>
+                <label className="article-field"><span>Pilih produk Shopee (bisa lebih dari satu)</span>
+                  <select value="" onChange={(e) => { const id = e.target.value; if (id && !(block.productIds ?? []).includes(id)) updateBlock(block.id, { productIds: [...(block.productIds ?? []), id] }); }}>
+                    <option value="">Pilih produk Shopee...</option>
+                    {shopeeProducts.filter((p) => p.name.toLowerCase().includes(productSearch.toLowerCase()) && !(block.productIds ?? []).includes(p.id)).map((p) => <option key={p.id} value={p.id}>{p.name}{p.price != null ? ` — ${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : ''}</option>)}
+                  </select>
+                </label>
+                <div className="selected-products-list">{(block.productIds ?? []).map((id) => { const p = shopeeProducts.find((item) => item.id === id); if (!p) return null; return <div className="selected-product-row" key={id}>{p.image_url ? <img src={p.image_url} alt="" /> : <span className="block-product-placeholder">S</span>}<span><strong>{p.name}</strong><small>{p.price != null ? `${p.currency ?? 'IDR'} ${Number(p.price).toLocaleString('id-ID')}` : 'Harga tidak diisi'}</small></span><button type="button" className="article-delete-button" onClick={() => updateBlock(block.id, { productIds: (block.productIds ?? []).filter((pid) => pid !== id) })}>Hapus</button></div>; })}</div>
+                <div className="article-product-layout-settings"><label className="article-field"><span>Ukuran blok produk</span><select value={block.productSize ?? 'full'} onChange={(e) => updateBlock(block.id, { productSize: e.target.value as ArticleBlock['productSize'] })}><option value="small">Kecil — 25%</option><option value="medium">Sedang — 50%</option><option value="large">Besar — 75%</option><option value="full">Penuh — 100%</option></select></label><label className="article-field"><span>Alignment blok produk</span><select value={block.productAlignment ?? 'left'} onChange={(e) => updateBlock(block.id, { productAlignment: e.target.value as ArticleBlock['productAlignment'] })}><option value="left">Rata kiri</option><option value="center">Tengah</option><option value="right">Rata kanan</option></select></label></div>
+              </>}
+            </div>}
             {block.type === 'image' && <div className="article-block-fields">
               <label className="article-upload-button"> {uploadingBlockId === block.id ? 'Mengunggah gambar...' : 'Pilih gambar dari komputer'}
                 <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={uploadingBlockId === block.id} onChange={(e) => { void uploadBlockImage(block.id, e.target.files?.[0]); e.currentTarget.value = ''; }} />
@@ -506,7 +533,7 @@ export default function Artikel({ userId }: { userId: string }) {
           </div>)}
         </div>
         <div className="add-block-panel"><strong>Tambah blok</strong><div className="add-block-buttons">
-          {(['heading', 'text', 'list', 'affiliate', 'image', 'tiktok', 'quote', 'divider'] as BlockType[]).map((type) => <button type="button" key={type} className="add-block-button" onClick={() => addBlock(type)}>＋ {blockLabel(type)}</button>)}
+          {(['heading', 'text', 'list', 'affiliate', 'shopeeAffiliate', 'image', 'tiktok', 'quote', 'divider'] as BlockType[]).map((type) => <button type="button" key={type} className="add-block-button" onClick={() => addBlock(type)}>＋ {blockLabel(type)}</button>)}
         </div></div>
       </> : <div className="article-preview">
         <span className="article-category-tag">{category}</span><h1>{title || 'Judul Artikel'}</h1>{excerpt && <p className="article-preview-excerpt">{excerpt}</p>}

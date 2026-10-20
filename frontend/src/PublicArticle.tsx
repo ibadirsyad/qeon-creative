@@ -4,7 +4,7 @@ import './PublicArticle.css';
 
 type Block = {
   id?: string;
-  type: 'heading' | 'text' | 'list' | 'affiliate' | 'image' | 'tiktok' | 'quote' | 'divider';
+  type: 'heading' | 'text' | 'list' | 'affiliate' | 'shopeeAffiliate' | 'image' | 'tiktok' | 'quote' | 'divider';
   text?: string;
   level?: 2 | 3;
   items?: string[];
@@ -57,6 +57,7 @@ function InlineText({ text }: { text: string }) {
 export default function PublicArticle({ slug }: { slug: string }) {
   const [article, setArticle] = useState<Article | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [shopeeProducts, setShopeeProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isPreview, setIsPreview] = useState(false);
@@ -104,6 +105,7 @@ export default function PublicArticle({ slug }: { slug: string }) {
       setArticle(articleData);
       const blocks = parseBlocks(articleData.content);
       const ids = [...new Set(blocks.filter((b) => b.type === 'affiliate').flatMap((b) => b.productIds ?? []))];
+      const shopeeIds = [...new Set(blocks.filter((b) => b.type === 'shopeeAffiliate').flatMap((b) => b.productIds ?? []))];
       if (ids.length) {
         const { data: productData, error: productError } = await supabase.from('affiliate_products')
           .select('id,name,affiliate_url,image_url,price,currency').in('id', ids);
@@ -116,9 +118,21 @@ export default function PublicArticle({ slug }: { slug: string }) {
             setProductLoadError('Produk untuk blok ini tidak ditemukan atau belum dapat dibaca oleh pengunjung publik. Periksa produk yang dipilih dan kebijakan akses SELECT di Supabase.');
           }
         }
-      } else if (active) {
-        setProducts([]);
-      }
+      } else if (active) setProducts([]);
+
+      if (shopeeIds.length) {
+        const { data: shopeeData, error: shopeeError } = await supabase.from('shopee_affiliate_products')
+          .select('id,name,affiliate_url,image_url,price,currency').in('id', shopeeIds);
+        if (active) {
+          setShopeeProducts((shopeeData ?? []) as Product[]);
+          if (shopeeError) {
+            console.error('Gagal memuat produk Shopee:', shopeeError.message);
+            setProductLoadError('Produk Shopee belum dapat dimuat. Periksa kebijakan SELECT publik pada tabel shopee_affiliate_products di Supabase.');
+          } else if (!shopeeData?.length) {
+            setProductLoadError('Produk Shopee yang dipilih tidak ditemukan atau belum dapat dibaca oleh pengunjung publik.');
+          }
+        }
+      } else if (active) setShopeeProducts([]);
       if (active) setLoading(false);
     }
     void load();
@@ -210,6 +224,15 @@ export default function PublicArticle({ slug }: { slug: string }) {
               {p.image_url ? <img src={p.image_url} alt={p.name} /> : <div className="public-product-placeholder">Produk</div>}
               <div className="public-product-info"><h3>{p.name}</h3>{p.price != null && <p className="public-product-price">{p.currency ?? 'IDR'} {Number(p.price).toLocaleString('id-ID')}</p>}
                 <a className="public-product-link" href={p.affiliate_url} target="_blank" rel="sponsored noreferrer">Lihat Produk</a></div>
+            </section>)}</div>;
+          }
+          if (block.type === 'shopeeAffiliate') {
+            const selected = (block.productIds ?? []).map((id) => shopeeProducts.find((p) => p.id === id)).filter((p): p is Product => Boolean(p));
+            if (selected.length === 0) return <div key={key} className="public-product-empty" role="status">{productLoadError || 'Belum ada produk Shopee yang dipilih untuk blok ini.'}</div>;
+            return <div key={key} className={`public-product-grid public-product-grid-size-${block.productSize ?? 'full'} public-product-grid-align-${block.productAlignment ?? 'left'}`}>{selected.map((p) => <section className="public-product-card" key={p.id}>
+              {p.image_url ? <img src={p.image_url} alt={p.name} loading="lazy" /> : <div className="public-product-placeholder">Shopee</div>}
+              <div className="public-product-info"><h3>{p.name}</h3>{p.price != null && <p className="public-product-price">{p.currency ?? 'IDR'} {Number(p.price).toLocaleString('id-ID')}</p>}
+                <a className="public-product-link" href={p.affiliate_url} target="_blank" rel="sponsored noreferrer">Lihat di Shopee ↗</a></div>
             </section>)}</div>;
           }
           return null;
