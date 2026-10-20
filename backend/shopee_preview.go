@@ -112,6 +112,30 @@ func shopeePreviewImageHandler(w http.ResponseWriter, r *http.Request) {
 		`\u003A`, ":", `\u003a`, ":", `\u0026`, "&",
 		`&amp;`, "&", `%3A`, ":", `%3a`, ":", `%2F`, "/", `%2f`, "/",
 	).Replace(string(body))
+	lowerBody := strings.ToLower(diagnosticBody)
+	for _, marker := range []string{"susercontent.com"} {
+		start := 0
+		for i := 0; i < 2; i++ {
+			idx := strings.Index(lowerBody[start:], marker)
+			if idx < 0 {
+				break
+			}
+			idx += start
+			from := idx - 100
+			if from < 0 {
+				from = 0
+			}
+			to := idx + len(marker) + 150
+			if to > len(diagnosticBody) {
+				to = len(diagnosticBody)
+			}
+			log.Printf("[shopee-preview] CDN context %d: %q", i+1, diagnosticBody[from:to])
+			start = idx + len(marker)
+			if start >= len(lowerBody) {
+				break
+			}
+		}
+	}
 	log.Printf("[shopee-preview] CDN tidak ditemukan; host=%s content_type=%q bytes=%d susercontent=%d img_susercontent=%d file_path=%d og_image=%d image_word=%d",
 		finalURL.Hostname(), contentType, len(body),
 		strings.Count(strings.ToLower(diagnosticBody), "susercontent.com"),
