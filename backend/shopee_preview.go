@@ -192,35 +192,25 @@ func shopeePreviewImageHandler(w http.ResponseWriter, r *http.Request) {
 	// Normalisasi encoding umum yang digunakan dalam HTML/JSON.
 	diagnosticBody := normalizeShopeeHTML(string(body))
 	lowerBody := strings.ToLower(diagnosticBody)
-	for _, marker := range []string{
-		"og:image",
-		"twitter:image",
-		"imageUrl",
-		"image_url",
-		"cover",
-		"itemid",
-		"product",
-		"__next_data__",
-		"application/ld+json",
-	} {
+	marker := "cover"
+	idx := strings.Index(lowerBody, marker)
+
+	if idx >= 0 {
+		start := idx - 300
+		if start < 0 {
+			start = 0
+		}
+
+		end := idx + 700
+		if end > len(diagnosticBody) {
+			end = len(diagnosticBody)
+		}
+
 		log.Printf(
-			"[shopee-preview] marker=%q count=%d",
-			marker,
-			strings.Count(lowerBody, strings.ToLower(marker)),
+			"[shopee-preview] cover context: %q",
+			diagnosticBody[start:end],
 		)
 	}
-	log.Printf(
-		"[shopee-preview] CDN tidak ditemukan; host=%s content_type=%q bytes=%d susercontent=%d img_susercontent=%d file_path=%d og_image=%d image_word=%d",
-		finalURL.Hostname(),
-		contentType,
-		len(body),
-		strings.Count(lowerBody, "susercontent.com"),
-		strings.Count(lowerBody, "img.susercontent.com"),
-		strings.Count(lowerBody, "/file/"),
-		strings.Count(lowerBody, "og:image"),
-		strings.Count(lowerBody, "image"),
-	)
-
 	// Diagnostik terbatas: ambil konteks sekitar maksimal dua
 	// kemunculan domain CDN. Tidak mencatat keseluruhan HTML.
 	logShopeeCDNContext(diagnosticBody, 2)
