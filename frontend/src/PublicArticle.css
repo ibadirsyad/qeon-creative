@@ -753,3 +753,118 @@
   .public-article-footer { width: calc(100% + 28px); margin: 30px -14px 0; padding: 22px 18px; flex-wrap: wrap; justify-content: space-between; }
   .public-article-footer > span { order: 3; width: 100%; }
 }
+
+/* =========================================================
+   TAMBAHAN: JUMLAH PENGUNJUNG & TOMBOL LOVE ARTIKEL
+   Tempelkan di bagian paling bawah PublicArticle.css
+   ========================================================= */
+
+.public-article-engagement {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0 22px;
+}
+
+/* Tampilan jumlah pengunjung dan Love */
+.public-article-views,
+.public-article-love {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #e3eae6;
+  border-radius: 999px;
+  background: #f7faf7;
+  color: #58675f;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+/* Ikon mata dan hati */
+.public-article-views svg,
+.public-article-love svg {
+  display: block;
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Angka pengunjung dan jumlah Love */
+.public-article-views strong,
+.public-article-love strong {
+  color: inherit;
+  font-size: 0.88rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tombol Love tanpa tulisan */
+.public-article-love {
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.public-article-love:hover:not(:disabled) {
+  color: #e04464;
+  border-color: #f3b9c6;
+  background: #fff1f4;
+  transform: translateY(-1px);
+}
+
+/* Kondisi sudah di-Love */
+.public-article-love.is-loved {
+  color: #e04464;
+  border-color: #f3b9c6;
+  background: #fff0f4;
+}
+
+.public-article-love.is-loved svg {
+  fill: currentColor;
+}
+
+/* Kondisi tombol sedang memproses */
+.public-article-love:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+/* Tampilan HP */
+@media (max-width: 680px) {
+  .public-article-engagement {
+    gap: 8px;
+    margin: 15px 0 18px;
+  }
+
+  .public-article-views,
+  .public-article-love {
+    min-height: 36px;
+    gap: 6px;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+
+  .public-article-views svg,
+  .public-article-love svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .public-article-views strong,
+  .public-article-love strong {
+    font-size: 0.82rem;
+  }
+}
