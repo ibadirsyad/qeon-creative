@@ -54,6 +54,25 @@ function InlineText({ text }: { text: string }) {
   })}</>;
 }
 
+type ArticleEngagement = { view_count: number; love_count: number; loved: boolean };
+
+function getVisitorKey() {
+  const storageKey = 'affilicms_article_visitor_key';
+  try {
+    let key = localStorage.getItem(storageKey);
+    if (!key) {
+      key = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(storageKey, key);
+    }
+    return key;
+  } catch {
+    // Fallback for browsers that block localStorage; this visitor may not be deduplicated.
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
 export default function PublicArticle({ slug }: { slug: string }) {
   const [article, setArticle] = useState<Article | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -64,6 +83,8 @@ export default function PublicArticle({ slug }: { slug: string }) {
   const [productLoadError, setProductLoadError] = useState('');
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({ site_name: 'AffiliCMS', tagline: '', logo_url: '', footer_text: 'Konten dan rekomendasi pilihan.' });
   const [relatedArticles, setRelatedArticles] = useState<RelatedArticle[]>([]);
+  const [engagement, setEngagement] = useState<ArticleEngagement>({ view_count: 0, love_count: 0, loved: false });
+  const [loveBusy, setLoveBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -142,6 +163,56 @@ export default function PublicArticle({ slug }: { slug: string }) {
 
   useEffect(() => {
     let active = true;
+    if (!article?.id || isPreview) return () => { active = false; };
+
+    async function registerView() {
+      const visitorKey = getVisitorKey();
+      const { data, error } = await supabase.rpc('register_article_view', {
+        p_article_id: article!.id,
+        p_visitor_key: visitorKey,
+      });
+      if (!active) return;
+      if (error) {
+        console.error('Gagal memuat statistik artikel:', error.message);
+        return;
+      }
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row) setEngagement({
+        view_count: Number(row.view_count ?? 0),
+        love_count: Number(row.love_count ?? 0),
+        loved: Boolean(row.loved),
+      });
+    }
+
+    void registerView();
+    return () => { active = false; };
+  }, [article?.id, isPreview]);
+
+  async function toggleLove() {
+    if (!article?.id || isPreview || loveBusy) return;
+    setLoveBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('toggle_article_love', {
+        p_article_id: article.id,
+        p_visitor_key: getVisitorKey(),
+        p_loved: !engagement.loved,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row) setEngagement((current) => ({
+        ...current,
+        love_count: Number(row.love_count ?? current.love_count),
+        loved: Boolean(row.loved),
+      }));
+    } catch (err) {
+      console.error('Gagal memperbarui love artikel:', err);
+    } finally {
+      setLoveBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
     const loadSettings = async () => {
       const { data, error } = await supabase.from('website_settings')
         .select('site_name,tagline,logo_url,footer_text').eq('id', 'main').maybeSingle();
@@ -196,6 +267,16 @@ export default function PublicArticle({ slug }: { slug: string }) {
       {isPreview && <div className="public-article-preview-notice">PRATINJAU PENGUNJUNG · Artikel ini belum tentu sudah diterbitkan</div>}
       <div className="public-article-kicker">ARTIKEL</div>
       <h1>{article.title}</h1>
+      {!isPreview && <div className="public-article-engagement" aria-label="Statistik dan apresiasi artikel">
+        <span className="public-article-views" title="Pengunjung unik per browser">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <strong>{engagement.view_count.toLocaleString('id-ID')}</strong><span>pengunjung</span>
+        </span>
+        <button type="button" className={`public-article-love ${engagement.loved ? 'is-loved' : ''}`} onClick={() => void toggleLove()} disabled={loveBusy} aria-pressed={engagement.loved} aria-label={engagement.loved ? 'Batalkan love artikel' : 'Beri love artikel'}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"/></svg>
+          <span>{engagement.loved ? 'Loved' : 'Love'}</span><strong>{engagement.love_count.toLocaleString('id-ID')}</strong>
+        </button>
+      </div>}
       {article.excerpt && <p className="public-article-excerpt">{article.excerpt}</p>}
       <p className="public-article-date">Diterbitkan {new Date(article.published_at || article.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
       {article.cover_image_url && <img className="public-article-cover" src={article.cover_image_url} alt={article.title} />}
