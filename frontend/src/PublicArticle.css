@@ -702,3 +702,80 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+
+/* =========================================================
+   Article engagement — views counter and Love button
+   Added accessibility, pressed states, and responsive layout.
+   ========================================================= */
+.public-article-engagement {
+  width: 100%;
+  min-width: 0;
+}
+
+.public-article-views {
+  cursor: default;
+  user-select: none;
+}
+
+.public-article-love {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid #e0e9e3;
+  font-family: inherit;
+  line-height: 1;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.public-article-love:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.public-article-love:focus-visible {
+  outline: 3px solid rgba(198, 45, 85, 0.28);
+  outline-offset: 3px;
+}
+
+.public-article-love.is-loved:hover:not(:disabled) {
+  border-color: #e99aac;
+  background: #ffe8ee;
+}
+
+.public-article-engagement strong {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 680px) {
+  .public-article-engagement {
+    gap: 8px;
+    margin: 16px 0 18px;
+  }
+
+  .public-article-views,
+  .public-article-love {
+    min-height: 40px;
+    gap: 7px;
+    padding: 9px 12px;
+    font-size: 0.84rem;
+  }
+
+  .public-article-views svg,
+  .public-article-love svg {
+    width: 17px;
+    height: 17px;
+  }
+}
+
+@media (max-width: 360px) {
+  .public-article-engagement {
+    gap: 7px;
+  }
+
+  .public-article-views,
+  .public-article-love {
+    min-height: 38px;
+    padding: 8px 10px;
+    font-size: 0.8rem;
+  }
+}

@@ -270,11 +270,11 @@ export default function PublicArticle({ slug }: { slug: string }) {
       {!isPreview && <div className="public-article-engagement" aria-label="Statistik dan apresiasi artikel">
         <span className="public-article-views" title="Pengunjung unik per browser">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
-          <strong>{engagement.view_count.toLocaleString('id-ID')}</strong><span>pengunjung</span>
+          <strong>{engagement.view_count.toLocaleString('id-ID')}</strong>
         </span>
         <button type="button" className={`public-article-love ${engagement.loved ? 'is-loved' : ''}`} onClick={() => void toggleLove()} disabled={loveBusy} aria-pressed={engagement.loved} aria-label={engagement.loved ? 'Batalkan love artikel' : 'Beri love artikel'}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"/></svg>
-          <span>{engagement.loved ? 'Loved' : 'Love'}</span><strong>{engagement.love_count.toLocaleString('id-ID')}</strong>
+          <strong>{engagement.love_count.toLocaleString('id-ID')}</strong>
         </button>
       </div>}
       {article.excerpt && <p className="public-article-excerpt">{article.excerpt}</p>}
