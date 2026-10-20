@@ -192,23 +192,21 @@ func shopeePreviewImageHandler(w http.ResponseWriter, r *http.Request) {
 	// Normalisasi encoding umum yang digunakan dalam HTML/JSON.
 	diagnosticBody := normalizeShopeeHTML(string(body))
 	lowerBody := strings.ToLower(diagnosticBody)
-	marker := "cover"
-	idx := strings.Index(lowerBody, marker)
-
-	if idx >= 0 {
-		start := idx - 300
-		if start < 0 {
-			start = 0
-		}
-
-		end := idx + 700
-		if end > len(diagnosticBody) {
-			end = len(diagnosticBody)
-		}
-
+	for _, marker := range []string{
+		"<body",
+		"<script",
+		"__initial",
+		"__data",
+		"window.",
+		"application/json",
+		"opaanlp",
+		"24517949",
+		"26484692467",
+	} {
 		log.Printf(
-			"[shopee-preview] cover context: %q",
-			diagnosticBody[start:end],
+			"[shopee-preview] marker=%q count=%d",
+			marker,
+			strings.Count(lowerBody, strings.ToLower(marker)),
 		)
 	}
 	// Diagnostik terbatas: ambil konteks sekitar maksimal dua
