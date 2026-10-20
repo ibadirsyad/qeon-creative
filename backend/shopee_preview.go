@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -189,6 +190,21 @@ func shopeePreviewImageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fallback: link affiliate Shopee sering mengarah ke halaman perantara
+	// yang HTML-nya tidak memuat gambar produk karena halaman dirender JS.
+	// Coba endpoint item/get menggunakan shopid dan itemid dari URL final.
+	if imageURL, apiErr := fetchShopeeImageFromItemAPI(ctx, client, finalURL); apiErr == nil && imageURL != "" {
+		log.Printf("[shopee-preview] gambar ditemukan melalui API item/get")
+		writeJSON(w, http.StatusOK, APIResponse{
+			Status:   "ok",
+			Message:  "Gambar ditemukan melalui data produk Shopee",
+			ImageURL: imageURL,
+		})
+		return
+	} else if apiErr != nil {
+		log.Printf("[shopee-preview] fallback API produk gagal: %v", apiErr)
+	}
+
 	// Normalisasi encoding umum yang digunakan dalam HTML/JSON.
 	diagnosticBody := normalizeShopeeHTML(string(body))
 	lowerBody := strings.ToLower(diagnosticBody)
@@ -231,7 +247,7 @@ func isShopeeHost(host string) bool {
 }
 
 var shopeeImageURLPattern = regexp.MustCompile(
-	`https?://[^"'\s<>]+`,
+	`(https?://|//)[^"'[:space:]<>]+`,
 )
 
 func normalizeShopeeHTML(value string) string {
@@ -392,4 +408,116 @@ func logShopeeCDNContext(body string, limit int) {
 			return
 		}
 	}
+}
+
+
+// ShopeeItemAPIResponse memuat field gambar publik dari endpoint item/get.
+type ShopeeItemAPIResponse struct {
+	Data struct {
+		Image  string   `json:"image"`
+		Images []string `json:"images"`
+	} `json:"data"`
+	Error    int    `json:"error"`
+	ErrorMsg string `json:"error_msg"`
+}
+
+var shopeeSEOItemPattern = regexp.MustCompile(`(?i)i\.(\d+)\.(\d+)`)
+var shopeeNumericIDPattern = regexp.MustCompile(`^\d+$`)
+var shopeeImageIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// parseShopeeProductIDs mendukung URL /product/{shopid}/{itemid},
+// redirect /opaanlp/{shopid}/{itemid}, dan URL SEO berformat i.{shopid}.{itemid}.
+func parseShopeeProductIDs(productURL *url.URL) (shopID, itemID string, ok bool) {
+	if productURL == nil || !isShopeeHost(productURL.Hostname()) {
+		return "", "", false
+	}
+
+	segments := strings.Split(strings.Trim(productURL.Path, "/"), "/")
+	for i := 0; i+2 < len(segments); i++ {
+		if (segments[i] == "product" || segments[i] == "opaanlp") &&
+			shopeeNumericIDPattern.MatchString(segments[i+1]) &&
+			shopeeNumericIDPattern.MatchString(segments[i+2]) {
+			return segments[i+1], segments[i+2], true
+		}
+	}
+
+	if matches := shopeeSEOItemPattern.FindStringSubmatch(productURL.Path); len(matches) == 3 {
+		return matches[1], matches[2], true
+	}
+
+	query := productURL.Query()
+	shopID = query.Get("shopid")
+	itemID = query.Get("itemid")
+	if shopeeNumericIDPattern.MatchString(shopID) && shopeeNumericIDPattern.MatchString(itemID) {
+		return shopID, itemID, true
+	}
+
+	return "", "", false
+}
+
+// fetchShopeeImageFromItemAPI meminta data produk publik dan membentuk URL CDN
+// dari image ID yang dikembalikan Shopee. Hanya memanggil domain Shopee tetap.
+func fetchShopeeImageFromItemAPI(ctx context.Context, client *http.Client, productURL *url.URL) (string, error) {
+	shopID, itemID, ok := parseShopeeProductIDs(productURL)
+	if !ok {
+		return "", fmt.Errorf("shopid/itemid tidak ditemukan pada URL tujuan")
+	}
+
+	apiURL := url.URL{
+		Scheme: "https",
+		Host:   "shopee.co.id",
+		Path:   "/api/v4/item/get",
+	}
+	query := url.Values{}
+	query.Set("shopid", shopID)
+	query.Set("itemid", itemID)
+	apiURL.RawQuery = query.Encode()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("membuat permintaan API produk: %w", err)
+	}
+	request.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	request.Header.Set("Accept", "application/json,text/plain,*/*")
+	request.Header.Set("Accept-Language", "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7")
+	request.Header.Set("Referer", "https://shopee.co.id/")
+	request.Header.Set("X-Requested-With", "XMLHttpRequest")
+
+	response, err := client.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("mengakses API produk Shopee: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return "", fmt.Errorf("API produk Shopee mengembalikan HTTP %d", response.StatusCode)
+	}
+
+	var result ShopeeItemAPIResponse
+	if err := json.NewDecoder(io.LimitReader(response.Body, 2*1024*1024)).Decode(&result); err != nil {
+		return "", fmt.Errorf("membaca JSON API produk Shopee: %w", err)
+	}
+	if result.Error != 0 {
+		return "", fmt.Errorf("API produk Shopee menolak permintaan (error %d)", result.Error)
+	}
+
+	imageIDs := make([]string, 0, len(result.Data.Images)+1)
+	if result.Data.Image != "" {
+		imageIDs = append(imageIDs, result.Data.Image)
+	}
+	imageIDs = append(imageIDs, result.Data.Images...)
+
+	for _, imageID := range imageIDs {
+		imageID = strings.TrimSpace(imageID)
+		if !shopeeImageIDPattern.MatchString(imageID) {
+			continue
+		}
+		// Gunakan format CDN Shopee yang sesuai dengan contoh srcset produk.
+		return "https://down-id.img.susercontent.com/file/" + imageID + "@resize_w900_nl", nil
+	}
+
+	if result.ErrorMsg != "" {
+		return "", fmt.Errorf("API produk Shopee: %s", result.ErrorMsg)
+	}
+	return "", fmt.Errorf("API produk tidak mengembalikan image ID")
 }
