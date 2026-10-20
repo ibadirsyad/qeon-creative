@@ -192,7 +192,23 @@ func shopeePreviewImageHandler(w http.ResponseWriter, r *http.Request) {
 	// Normalisasi encoding umum yang digunakan dalam HTML/JSON.
 	diagnosticBody := normalizeShopeeHTML(string(body))
 	lowerBody := strings.ToLower(diagnosticBody)
-
+	for _, marker := range []string{
+		"og:image",
+		"twitter:image",
+		"imageUrl",
+		"image_url",
+		"cover",
+		"itemid",
+		"product",
+		"__next_data__",
+		"application/ld+json",
+	} {
+		log.Printf(
+			"[shopee-preview] marker=%q count=%d",
+			marker,
+			strings.Count(lowerBody, strings.ToLower(marker)),
+		)
+	}
 	log.Printf(
 		"[shopee-preview] CDN tidak ditemukan; host=%s content_type=%q bytes=%d susercontent=%d img_susercontent=%d file_path=%d og_image=%d image_word=%d",
 		finalURL.Hostname(),
