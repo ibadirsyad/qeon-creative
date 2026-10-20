@@ -254,35 +254,106 @@ func normalizeShopeeHTML(value string) string {
 
 func extractShopeeCDNImage(body []byte) string {
 	raw := normalizeShopeeHTML(string(body))
-	candidates := shopeeImageURLPattern.FindAllString(raw, -1)
 
-	for _, candidate := range candidates {
-		candidate = strings.TrimRight(candidate, `),;]}`)
+	// Prioritaskan gambar dari atribut srcset pada tag picture/source.
+	// Contoh:
+	// srcset="https://.../file/id-...@resize_w450_nl 1x,
+	//         https://.../file/id-...@resize_w900_nl 2x"
+	srcsetPattern := regexp.MustCompile(
+		`(?is)\bsrcset\s*=\s*["']([^"']+)["']`,
+	)
 
-		parsed, err := url.Parse(candidate)
-		if err != nil ||
-			parsed.Scheme != "https" ||
-			parsed.User != nil {
-			continue
+	var candidates []string
+
+	for _, match := range srcsetPattern.FindAllStringSubmatch(raw, -1) {
+		srcset := strings.TrimSpace(match[1])
+
+		for _, entry := range strings.Split(srcset, ",") {
+			fields := strings.Fields(strings.TrimSpace(entry))
+			if len(fields) == 0 {
+				continue
+			}
+
+			candidate := normalizeShopeeImageURL(fields[0])
+			if isValidShopeeImageURL(candidate) {
+				candidates = append(candidates, candidate)
+			}
 		}
-
-		host := strings.ToLower(
-			strings.TrimSuffix(parsed.Hostname(), "."),
-		)
-
-		if host != "susercontent.com" &&
-			!strings.HasSuffix(host, ".susercontent.com") {
-			continue
-		}
-
-		if !strings.HasPrefix(parsed.Path, "/file/") {
-			continue
-		}
-
-		return parsed.String()
 	}
 
-	return ""
+	// Fallback: cari URL gambar CDN langsung di HTML/JSON.
+	for _, candidate := range shopeeImageURLPattern.FindAllString(raw, -1) {
+		candidate = strings.TrimRight(candidate, `),;]}`)
+		candidate = normalizeShopeeImageURL(candidate)
+
+		if isValidShopeeImageURL(candidate) {
+			candidates = append(candidates, candidate)
+		}
+	}
+
+	// Pilih resolusi terbesar yang tersedia.
+	// Contoh resize_w900_nl diprioritaskan daripada resize_w450_nl.
+	bestURL := ""
+	bestScore := -1
+
+	for _, candidate := range candidates {
+		score := shopeeImageResolutionScore(candidate)
+
+		if score > bestScore {
+			bestScore = score
+			bestURL = candidate
+		}
+	}
+
+	return bestURL
+}
+
+func normalizeShopeeImageURL(candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	candidate = strings.TrimRight(candidate, `),;]}`)
+
+	// URL protokol relatif:
+	// //down-id.img.susercontent.com/file/...
+	if strings.HasPrefix(candidate, "//") {
+		candidate = "https:" + candidate
+	}
+
+	return candidate
+}
+
+func isValidShopeeImageURL(candidate string) bool {
+	parsed, err := url.Parse(candidate)
+	if err != nil {
+		return false
+	}
+
+	if parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return false
+	}
+
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+
+	if host != "susercontent.com" &&
+		!strings.HasSuffix(host, ".susercontent.com") {
+		return false
+	}
+
+	return strings.HasPrefix(parsed.Path, "/file/")
+}
+
+func shopeeImageResolutionScore(candidate string) int {
+	lower := strings.ToLower(candidate)
+
+	// Prioritaskan resolusi lebih tinggi jika tersedia.
+	if strings.Contains(lower, "resize_w900") {
+		return 900
+	}
+	if strings.Contains(lower, "resize_w450") {
+		return 450
+	}
+
+	// URL gambar CDN valid tanpa penanda resolusi.
+	return 1
 }
 
 func logShopeeCDNContext(body string, limit int) {
